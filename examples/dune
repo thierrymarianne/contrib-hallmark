@@ -1,0 +1,5 @@
+(rocq.theory
+ (name HallmarkExamples)
+ (theories Stdlib Ltac2 Equations
+          MetaRocq.Utils MetaRocq.Common MetaRocq.Template
+          Hallmark))

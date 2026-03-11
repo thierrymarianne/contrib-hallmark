@@ -1,0 +1,4 @@
+(include_subdirs qualified)
+(rocq.theory
+ (name Hallmark)
+ (theories Stdlib Ltac2 Equations MetaRocq.Utils MetaRocq.Common MetaRocq.Template))
