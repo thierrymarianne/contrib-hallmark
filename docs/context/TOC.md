@@ -10,7 +10,7 @@ Consult these **before** searching the web or guessing at APIs.
 | `rocq.md` | Rocq proof assistant basics |
 | `rocq-typeclasses.md` | Rocq typeclass system |
 | `metarocq.md` | MetaRocq overview and quoting |
-| `metarocq-ast.md` | MetaRocq AST types, kername equality (`eqb`/`==`), term decomposition (`decompose_app`, `decompose_prod`, `remove_arity`), lookup helpers, `type_of_constructor`, `TemplateMonad` |
+| `metarocq-ast.md` | MetaRocq AST types, kername equality (`eqb`/`==`), term decomposition (`decompose_app`, `decompose_prod`, `remove_arity`), lookup helpers, `type_of_constructor`, `TemplateMonad`, `tmQuoteModule`, `tmQuoteInductive`, `global_reference`, `build_env` |
 
 ## Prolog / SWI-Prolog
 

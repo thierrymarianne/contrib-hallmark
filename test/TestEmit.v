@@ -30,7 +30,7 @@ Definition delegate_clause :=
      cl_body := [PApp "manager_of" [PVar 0; PVar 1];
                  PApp "allowed" [PVar 1; PVar 2]] |}.
 
-Example print_admin_fact :
+Example print_admin_rule :
   print_clause admin_all_clause =
   "allowed(admin, X0) :- rule(admin_all)."
 := eq_refl.

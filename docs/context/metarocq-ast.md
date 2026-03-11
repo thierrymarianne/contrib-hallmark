@@ -134,21 +134,57 @@ Note: `program` is used as a `Notation` or `Definition` for `(global_env * term)
 tmReturn : forall {A}, A -> TemplateMonad A
 tmBind   : forall {A B}, TemplateMonad A -> (A -> TemplateMonad B) -> TemplateMonad B
 tmFail   : forall {A}, string -> TemplateMonad A
+tmMsg    : string -> TemplateMonad unit
 
 (* Quoting *)
 tmQuoteRec {A} (a : A) : TemplateMonad program
   (* = tmQuoteRecTransp a true — quotes all dependencies *)
+tmQuoteInductive : kername -> TemplateMonad mutual_inductive_body
+  (* Quotes a single inductive by kername — no global_env needed *)
+tmQuoteModule : qualid -> TemplateMonad (list global_reference)
+  (* Returns all declarations in a module as global_reference entries *)
 
 (* Defining *)
 tmDefinition (id : ident) {A} (t : A) : TemplateMonad A
   (* Creates a transparent definition in the environment *)
 
-(* Monadic notation: use >>= and ;; after importing monad notations *)
-(* Or call tmBind directly *)
-
 (* Vernacular command to run a TemplateMonad action: *)
 (* MetaRocq Run <tm>. *)
 ```
+
+## Global References (Common/Kernames.v)
+
+```coq
+Inductive global_reference :=
+| VarRef : ident -> global_reference
+| ConstRef : kername -> global_reference
+| IndRef : inductive -> global_reference
+| ConstructRef : inductive -> nat -> global_reference.
+```
+
+Filter for inductives from `tmQuoteModule` results:
+```coq
+Definition filter_ind_refs (refs : list global_reference) : list inductive :=
+  flat_map (fun gr =>
+    match gr with
+    | IndRef ind => [ind]
+    | _ => []
+    end) refs.
+```
+
+## Building a minimal global_env (Common/Environment.v)
+
+When using `tmQuoteInductive` instead of `tmQuoteRec`, build a `global_env`
+from the collected `(kername * global_decl)` pairs:
+
+```coq
+Definition build_env (decls : global_declarations) : global_env :=
+  {| universes := ContextSet.empty;
+     declarations := decls;
+     retroknowledge := Retroknowledge.empty |}.
+```
+
+Requires: `From MetaRocq.Common Require Import Environment.`
 
 ### Important: ident is bytestring
 

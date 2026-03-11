@@ -140,33 +140,36 @@ The dune `(rocq.extraction ...)` stanza compiles these into an OCaml library `ha
 == Step 3.7 — CLI binary <sec-step-3-7>
 
 Build the `hallmark` executable in `bin/hallmark.ml`.
-The binary is a thin OCaml wrapper that orchestrates `rocq compile` to run the pipeline:
+The binary links directly against `rocq-runtime.toplevel` and calls `Coqc.main` as an OCaml function — no subprocess, no shell.
 
 ```
-hallmark compile examples/Allowed.v -n allowed -o allowed.pl
+hallmark -Q theories=Hallmark -Q examples=HallmarkExamples \
+  HallmarkExamples.Allowed.allowed -o allowed.pl
 ```
 
 === Architecture
 
 The binary:
-1. Parses CLI arguments with `cmdliner`: input `.v` file, inductive name (`-n`), output `.pl` file (`-o`), and optional Rocq load-path flags (`-Q`, `-R`, passthrough).
-2. Generates a temporary driver `.v` file:
-   ```
-   From Hallmark Require Import Pipeline.
-   Require Import Allowed.
-   MetaCoq Run (hallmark_pipeline "allowed").
-   ```
-3. Invokes `rocq compile` on the driver file with Rocq's feedback output captured.
-   The Prolog text emitted via `tmMsg` appears in the compiler's message output.
-4. Parses the Prolog text from the captured output (delimited by `%%HALLMARK_BEGIN%%` / `%%HALLMARK_END%%` markers inserted by the pipeline).
-5. Writes the extracted text to the output `.pl` file.
-6. Cleans up the temporary file.
+1. Parses CLI arguments with `cmdliner`: a fully qualified inductive path (e.g. `HallmarkExamples.Allowed.allowed`), output file (`-o`/`--output`), and Rocq loadpath flags (`-R`/`--recursive`, `-Q`/`--qualified` as `DIR=NAME` pairs).
+2. Splits the qualified path at the last dot into module path and inductive name.
+3. Generates a temporary driver `.v` file that imports the user module, calls `hallmark_pipeline`, and wraps the result in `tmMsg` with `%%HALLMARK_BEGIN%%` / `%%HALLMARK_END%%` markers.
+4. Registers a `Feedback.add_feeder` listener that captures messages starting with the begin marker and extracts the Prolog content between markers.
+5. Redirects stdout to `/dev/null` (via `Unix.dup2`) to suppress Rocq's own console output.
+6. Calls `Coqc.main` with the loadpath flags and the driver path.
+7. Since `Coqc.main` may call `exit` internally, all post-compilation logic (write output, restore stdout, clean up temp file) is registered via `at_exit` handlers.
+
+=== Design decisions
+
+- *Markers in the driver, not `Pipeline.v`*: `hallmark_pipeline` purely returns the Prolog string via `tmReturn`. The `tmMsg` + markers are a CLI concern injected by the generated driver, keeping `dune build` silent and the library clean.
+- *`at_exit` pattern*: `Coqc.main` (via `Coqtop.start_coq`) may call `exit` on both success and error, so code after the call is unreachable. Exit handlers ensure output is written and temp files are cleaned up regardless.
+- *stdout redirect*: Rocq installs its own feedback console listener. Redirecting stdout to `/dev/null` during compilation and restoring it in `at_exit` ensures only the extracted Prolog output is emitted.
+- *No subprocess*: linking against `rocq-runtime.toplevel` gives direct access to Rocq's feedback system, proper OCaml exceptions, and avoids shell escaping issues.
 
 === Error handling
 
-- If `rocq compile` fails (exit code ≠ 0), the binary prints Rocq's error output and exits with code 1.
-- If the inductive is not found, the `tmFail` in the pipeline causes a compilation error, surfaced to the user.
-- If the output markers are missing, the binary reports a parsing error.
+- If Rocq compilation fails, `Coqc.main` exits with a non-zero code; Rocq's error messages go to stderr (not suppressed).
+- If the inductive is not found, `tmFail` in the pipeline causes a compilation error, surfaced via stderr.
+- If the feedback listener captures nothing (no markers found), the binary exits silently with no output.
 
 *Code deliverable:* `dune build` produces the `hallmark` binary.
 
@@ -174,14 +177,12 @@ The binary:
 ```
 (rule
  (alias runtest)
- (deps (:v ../examples/Allowed.v)
-       (:bin ../bin/hallmark.exe))
+ (deps (:bin ../bin/hallmark.exe))
  (targets allowed.pl)
  (action
-  (progn
-   (run %{bin} compile %{v} -n allowed -o %{targets})
-   (run swipl -g "consult('allowed.pl'), allowed(admin, r), halt(0)"
-              -t "halt(1)"))))
+  (run %{bin} -Q ../examples=HallmarkExamples
+              HallmarkExamples.Allowed.allowed
+              -o %{targets})))
 ```
 
 == Step 3.8 — End-to-end plunit via binary <sec-step-3-8>
@@ -219,10 +220,11 @@ test(rule_tag_present) :-
 Dune stanza in `test/prolog/dune`:
 ```
 (rule
- (deps (:v ../../examples/Allowed.v)
-       (:bin ../../bin/hallmark.exe))
+ (deps (:bin ../../bin/hallmark.exe))
  (targets allowed.pl)
- (action (run %{bin} compile %{v} -n allowed -o %{targets})))
+ (action (run %{bin} -Q ../../examples=HallmarkExamples
+                     HallmarkExamples.Allowed.allowed
+                     -o %{targets})))
 
 (rule
  (alias runtest)
@@ -230,4 +232,4 @@ Dune stanza in `test/prolog/dune`:
  (action (run swipl -g run_tests -t halt %{dep:test_allowed.pl})))
 ```
 
-This is the *first green-light moment*: a user runs `hallmark compile Allowed.v -n allowed -o allowed.pl` and gets a working Prolog rules engine, validated by automated tests.
+This is the *first green-light moment*: a user runs `hallmark HallmarkExamples.Allowed.allowed -o allowed.pl` and gets a working Prolog rules engine, validated by automated tests.

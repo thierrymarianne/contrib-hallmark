@@ -1,0 +1,3 @@
+(executable
+ (name hallmark)
+ (libraries rocq-runtime.toplevel cmdliner))

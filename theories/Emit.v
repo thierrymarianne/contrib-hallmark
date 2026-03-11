@@ -8,7 +8,7 @@
 From MetaRocq.Template Require Import All.
 From MetaRocq.Utils Require Import bytestring MRString.
 From Hallmark Require Import Clause.
-From Stdlib Require Import List.
+From Stdlib Require Import List Bool.
 Import ListNotations.
 
 Local Open Scope bs_scope.
@@ -29,17 +29,36 @@ Fixpoint print_term (t : prolog_term) : string :=
       end) args ++ ")"
   end.
 
-(** Render a clause. Every clause includes [rule(name)] as
-    the first body atom for traceability. *)
+(** Does a term contain any [PVar]? *)
+Fixpoint has_var (t : prolog_term) : bool :=
+  match t with
+  | PVar _ => true
+  | PAtom _ => false
+  | PApp _ args =>
+    (fix any (l : list prolog_term) : bool :=
+      match l with
+      | [] => false
+      | x :: rest => has_var x || any rest
+      end) args
+  end.
+
+(** Render a clause.
+    - Ground facts (no premises, no variables): [head.]
+    - Everything else carries [rule(name)] for audit trail. *)
 Definition print_clause (c : clause) : string :=
   let head := print_term (cl_head c) in
-  let rule_tag := print_term (PApp "rule" [PAtom (cl_name c)]) in
-  match cl_body c with
-  | [] => head ++ " :- " ++ rule_tag ++ "."
-  | body =>
-    head ++ " :- " ++ rule_tag ++ ", " ++
-    String.concat ", " (map print_term body) ++ "."
-  end.
+  let needs_tag := negb (match cl_body c with [] => true | _ => false end)
+                   || has_var (cl_head c) in
+  if needs_tag then
+    let rule_tag := print_term (PApp "rule" [PAtom (cl_name c)]) in
+    match cl_body c with
+    | [] => head ++ " :- " ++ rule_tag ++ "."
+    | body =>
+      head ++ " :- " ++ rule_tag ++ ", " ++
+      String.concat ", " (map print_term body) ++ "."
+    end
+  else
+    head ++ ".".
 
 (** Check whether [pre] is a prefix of [s]. *)
 Fixpoint is_prefix (pre s : string) : bool :=

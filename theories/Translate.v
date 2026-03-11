@@ -60,7 +60,10 @@ Definition extract_body (Σ : global_env) (ind_kn : kername)
     end
   in go 0 classes.
 
-(** Translate one constructor (already instantiated, parameters stripped). *)
+(** Translate one constructor (already instantiated, parameters stripped).
+    For nullary constructors (empty telescope, no conclusion args),
+    the constructor name is injected as an atom argument in the head:
+    e.g. [admin : user] becomes [user(admin).] *)
 Definition translate_constructor (Σ : global_env) (ind_kn : kername)
   (name : ident) (ty : term) : option clause :=
   let '(bindings, ret) := parse_telescope ty in
@@ -68,8 +71,13 @@ Definition translate_constructor (Σ : global_env) (ind_kn : kername)
   let classes := classify_all ind_kn bindings in
   match extract_conclusion Σ ind_kn total ret with
   | Some head =>
+    let head' :=
+      match head with
+      | PApp f [] => PApp f [PAtom name]
+      | _ => head
+      end in
     let body := extract_body Σ ind_kn classes in
-    Some {| cl_name := name; cl_head := head; cl_body := body |}
+    Some {| cl_name := name; cl_head := head'; cl_body := body |}
   | None => None
   end.
 
