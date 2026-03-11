@@ -175,8 +175,6 @@ termination within a known number of resolution steps.
 
 Each of these proofs is checked by Rocq's kernel and holds
 unconditionally once established.
-A natural question is whether such proofs must be written from
-scratch for every new rule set, or whether they can be structured
-for reuse.
-The next section shows how typeclasses turn these properties into
-composable building blocks.
+These properties need not be written from scratch for every new
+rule set — @sec-reusable-proofs shows how typeclasses turn them
+into composable building blocks.

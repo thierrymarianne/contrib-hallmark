@@ -58,17 +58,16 @@ With both sides in place, we make the connection explicit and describe
 how MetaRocq enables the translation (@sec-bridge).
 We then devote a full section to the proofs one can carry out about
 the rules — decidability, completeness, monotonicity, bounded depth
-(@sec-proofs) — and show how typeclasses turn these proofs into
-reusable, composable building blocks (@sec-reusable-proofs).
-We then present the Hallmark pipeline itself (@sec-hallmark),
-show how constraint logic programming extensions widen its reach
-to arithmetic, boolean, and linear domains (@sec-clp),
-address the composition of multi-predicate rule sets through mutual
-inductives, parameterization, and typeclasses (@sec-composition),
-extend the translation to handle negation via decidability proofs
-and stratification (@sec-negation),
-introduce tabling as a mechanism for guaranteed termination
-(@sec-tabling),
-show how resolution traces can be reconstructed into certified
-proof witnesses (@sec-witnesses),
-and discuss guarantees and future directions (@sec-perspectives).
+(@sec-proofs).
+We present the Hallmark pipeline itself (@sec-hallmark),
+then show how resolution traces can be reconstructed into certified
+proof witnesses, closing the loop back to Rocq (@sec-witnesses).
+We conclude with guarantees and future directions
+(@sec-perspectives).
+
+The appendices extend the core pipeline in several directions:
+reusable proof frameworks via typeclasses (@sec-reusable-proofs),
+constraint logic programming extensions (@sec-clp),
+composition of multi-predicate rule sets (@sec-composition),
+negation and stratification (@sec-negation),
+and tabling for guaranteed termination (@sec-tabling).

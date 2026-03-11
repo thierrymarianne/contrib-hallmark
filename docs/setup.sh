@@ -3,4 +3,5 @@ set -euo pipefail
 
 cargo install --locked typst-cli@0.14.0
 
-typst compile main.typ
+typst compile paper/hallmark.typ
+typst compile --root . plan/hallmark-plan.typ

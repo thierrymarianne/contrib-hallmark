@@ -1,3 +1,5 @@
+#pagebreak()
+
 = Negation and Stratification <sec-negation>
 
 The Horn clauses presented so far are _definite_: each rule
@@ -172,5 +174,5 @@ The negation extension preserves Hallmark's soundness properties:
 
 For programs that go beyond stratification — predicates with
 mutually negative dependencies that do not form a strict
-hierarchy — the next section introduces tabling as a mechanism
+hierarchy — @sec-tabling introduces tabling as a mechanism
 to recover well-defined semantics.

@@ -1,6 +1,8 @@
+#pagebreak()
+
 = Reusable Proofs via Typeclasses <sec-reusable-proofs>
 
-The properties presented in the previous section — decidability,
+The properties presented in @sec-proofs — decidability,
 completeness, confluence, monotonicity, bounded depth — are proved
 for a specific predicate.
 But the proof patterns are largely the same across different rule

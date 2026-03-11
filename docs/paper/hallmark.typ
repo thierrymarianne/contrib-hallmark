@@ -22,16 +22,19 @@
 #include "sections/04-proofs-as-programs.typ"
 #include "sections/05-from-types-to-clauses.typ"
 #include "sections/06-proving-properties.typ"
-#include "sections/07-reusable-proofs.typ"
-#include "sections/08-hallmark.typ"
-#include "sections/09-constraint-extensions.typ"
-#include "sections/10-composing-rule-sets.typ"
-#include "sections/11-negation.typ"
-#include "sections/12-tabling.typ"
-#include "sections/13-proof-witnesses.typ"
-#include "sections/14-perspectives.typ"
+#include "sections/07-hallmark.typ"
+#include "sections/08-proof-witnesses.typ"
+#include "sections/09-perspectives.typ"
+
+#counter(heading).update(0)
+#set heading(numbering: "A.1", supplement: [Appendix])
 
 #include "sections/appendix-a-ast-reference.typ"
 #include "sections/appendix-b-related-work.typ"
+#include "sections/appendix-c-reusable-proofs.typ"
+#include "sections/appendix-d-constraint-extensions.typ"
+#include "sections/appendix-e-composing-rule-sets.typ"
+#include "sections/appendix-f-negation.typ"
+#include "sections/appendix-g-tabling.typ"
 
 #bibliography("assets/refs.bib", title: "References", style: "ieee")

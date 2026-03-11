@@ -1,4 +1,6 @@
-= Extending the Translation with Constraints <sec-clp>
+#pagebreak()
+
+= Constraint Logic Programming Extensions <sec-clp>
 
 The Hallmark pipeline presented so far translates inductive constructors
 into pure Prolog clauses — facts and rules built from atoms and

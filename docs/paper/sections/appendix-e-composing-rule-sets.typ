@@ -1,3 +1,5 @@
+#pagebreak()
+
 = Composing Rule Sets <sec-composition>
 
 The examples so far have involved a single inductive predicate

@@ -1,3 +1,5 @@
+#pagebreak()
+
 = Tabling and Termination <sec-tabling>
 
 Prolog's depth-first search is both its greatest practical strength

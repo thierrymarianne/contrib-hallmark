@@ -1,8 +1,5 @@
 #pagebreak()
 
-#counter(heading).update(0)
-#set heading(numbering: "A.1", supplement: [Appendix])
-
 = MetaRocq AST Reference <appendix-ast>
 
 This appendix lists the MetaRocq term constructors that Hallmark

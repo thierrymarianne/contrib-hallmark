@@ -1,6 +1,6 @@
 #pagebreak()
 
-#heading(numbering: none, supplement: [Appendix])[Related Work] <appendix-related>
+= Related Work <appendix-related>
 
 This appendix positions Hallmark relative to existing systems
 that share part of its design space: rule evaluation, policy
