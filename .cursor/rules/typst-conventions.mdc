@@ -1,0 +1,58 @@
+---
+description: Typst document writing conventions — file layout, style, and best practices
+globs: "**/*.typ"
+alwaysApply: false
+---
+
+# Typst Writing Conventions
+
+## Project Layout
+
+Split the project into clear concerns. Never put template logic and prose in the same file.
+
+```
+main.typ              # Entry point: imports template, includes sections
+template/
+  conf.typ            # Page setup, fonts, show rules, title page layout
+sections/
+  01-introduction.typ # One file per top-level section (= heading)
+  02-methodology.typ
+  ...
+context/              # Reference material for the AI — never compiled
+  brief.md            # Project brief, goals, audience
+  outline.md          # Detailed outline / plan
+  source-notes.md     # Raw notes, extracts, summaries
+assets/               # Images, CSV, bib files used by the document
+```
+
+- `main.typ` should be short: apply the template with `#show`, set metadata, then `#include` each section in order.
+- Each section file is plain prose starting with a level-1 heading (`=`). It must not set page/font/show rules.
+- The `template/` folder owns all formatting. Content files never import it directly.
+- The `context/` folder holds auxiliary material (briefs, outlines, notes, summaries) in Markdown. These files are **not** included in the Typst build — they exist solely as reference for the AI when drafting or revising prose. Always read relevant `context/` files before writing a section.
+
+## Naming
+
+- Section files are prefixed with a two-digit number for ordering: `01-`, `02-`, etc.
+- Use lowercase kebab-case for all `.typ` filenames.
+- Labels use kebab-case: `<sec-introduction>`, `<fig-results-table>`.
+
+## Writing Style
+
+- One sentence per line in source (semantic line breaks). This produces cleaner diffs and makes reordering easy.
+- Keep lines under ~100 characters when practical.
+- Separate paragraphs with a blank line.
+- Use `//` comments sparingly in prose files — only for TODO or editorial notes.
+
+## Typst Idioms
+
+- Prefer `set` / `show` rules in the template over inline styling in prose.
+- Use `#figure` with a `caption` for every table, image, or code listing.
+- Give every figure a `<label>` and reference it with `@label` in the text.
+- Use `@label` cross-references instead of hard-coded section numbers.
+- Keep raw data (CSV, images, bib) in a top-level `assets/` directory.
+
+## When Adding a New Section
+
+1. Create `sections/NN-section-name.typ` with the next available number prefix.
+2. Add a corresponding `#include "sections/NN-section-name.typ"` line in `main.typ`.
+3. The section file starts with `= Section Title` — nothing else before it.

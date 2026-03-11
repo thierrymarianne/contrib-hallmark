@@ -1,0 +1,18 @@
+---
+description: Keep setup.sh up to date with all tools and build commands
+alwaysApply: true
+---
+
+# Setup Script Convention
+
+Whenever you introduce a new tool, dependency, or build command to the project, you **must** also add it to `setup.sh` at the project root.
+
+`setup.sh` is the single entry-point for bootstrapping and building the project from a clean machine. It must always reflect the current state of the project.
+
+## Rules
+
+- Every installable tool or dependency gets an install line in `setup.sh` (e.g. `cargo install`, `pip install`, `apt install`, `npm install`, etc.)
+- Every command needed to build or compile the project gets a build step at the end of the script
+- Pin versions when possible so builds are reproducible
+- Keep the script idempotent — safe to re-run without side-effects
+- Preserve the existing `set -euo pipefail` header

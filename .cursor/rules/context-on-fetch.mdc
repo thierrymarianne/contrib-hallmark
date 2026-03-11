@@ -1,0 +1,18 @@
+---
+description: Save fetched documentation to context/ instead of discarding it
+alwaysApply: true
+---
+
+# Save Fetched Documentation as Context
+
+Whenever you fetch documentation from the web (via WebSearch, WebFetch, or any online lookup), **always** save the relevant information as a Markdown file in `context/` before using it.
+
+## Rules
+
+- Create a file in `context/` with a descriptive kebab-case name (e.g. `context/metarocq-ast.md`).
+- Include the essential content: types, signatures, descriptions, examples. Strip navigation and boilerplate.
+- Reference the source URL at the top of the file.
+- Do this **before** writing any section or code that depends on the fetched information.
+- If a relevant context file already exists, update it rather than creating a duplicate.
+
+This ensures the project accumulates a local knowledge base and future sessions never need to re-fetch the same documentation.
