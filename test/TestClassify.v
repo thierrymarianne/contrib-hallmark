@@ -1,7 +1,7 @@
 From MetaRocq.Template Require Import All.
 From MetaRocq.Common Require Import Kernames.
 From Hallmark Require Import Telescope Classify Lookup.
-From HallmarkExamples Require Import QuoteAllowed.
+From HallmarkTest Require Import QuoteAllowed.
 From Stdlib Require Import List.
 Import ListNotations.
 

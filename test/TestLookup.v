@@ -1,6 +1,6 @@
 From MetaRocq.Template Require Import All.
 From Hallmark Require Import Lookup.
-From HallmarkExamples Require Import QuoteAllowed.
+From HallmarkTest Require Import QuoteAllowed.
 
 Example found_allowed :
   match snd allowed_program with
