@@ -23,6 +23,6 @@ echo "Pinning rocq-core ${ROCQ_VERSION}..."
 opam pin add rocq-core "${ROCQ_VERSION}" --yes
 
 echo "Installing dependencies..."
-opam install rocq-stdlib rocq-equations rocq-metarocq cmdliner --yes
+opam install rocq-stdlib rocq-equations rocq-metarocq cmdliner sexplib --yes
 
 echo "Done. Activate with: eval \"\$(opam env --switch=${SWITCH_NAME} --set-switch)\""

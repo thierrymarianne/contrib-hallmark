@@ -3,31 +3,99 @@
 %% Usage:
 %%   ?- why(allowed(admin, secret_report), Proof).
 %%
-%% Proof trees have the shape:
-%%   proof(Goal, fact)                      — ground fact
-%%   proof(Goal, by(Rule))                  — rule-tagged axiom (no premises)
-%%   proof(Goal, by(Rule, [Sub1, ...]))     — rule with sub-proofs
+%% Proof trees:
+%%   proof(Goal, by(fact, []))                 — ground fact
+%%   proof(Goal, by(Rule, []))                 — rule-tagged axiom
+%%   proof(Goal, by(Rule, [Sub1, ...]))        — rule with sub-proofs
 
-%% Ground fact: clause body is `true` (no rule tag).
-why(Goal, proof(Goal, fact)) :-
-    predicate_property(Goal, defined),
-    clause(Goal, true).
-
-%% Rule-tagged axiom: body is just rule(Name), no further premises.
-why(Goal, proof(Goal, by(Rule))) :-
-    predicate_property(Goal, defined),
-    clause(Goal, rule(Rule)).
-
-%% Rule with premises: body is rule(Name) followed by a conjunction.
+why(Goal, proof(Goal, by(fact, []))) :-
+    clause(Goal, true), !.
 why(Goal, proof(Goal, by(Rule, SubProofs))) :-
-    predicate_property(Goal, defined),
-    clause(Goal, (rule(Rule), Body)),
-    why_body(Body, SubProofs).
+    clause(Goal, Body),
+    body_rule(Body, Rule, Rest),
+    why_body(Rest, SubProofs).
 
-%% Traverse a conjunction of body atoms, collecting sub-proofs.
-why_body((A, B), [PA | PB]) :-
+body_rule((rule(R), Rest), R, Rest).
+body_rule(rule(R), R, true).
+
+why_body(true, []).
+why_body((G, Rest), [P | Ps]) :-
     !,
-    why(A, PA),
-    why_body(B, PB).
-why_body(A, [PA]) :-
-    why(A, PA).
+    why(G, P),
+    why_body(Rest, Ps).
+why_body(G, [P]) :-
+    why(G, P).
+
+%% explain/1 — pretty-print a proof tree with ANSI colors and tree guides.
+%%
+%% Usage:
+%%   ?- why(allowed(admin, secret_report), P), explain(P).
+
+c_reset("\e[0m").
+c_bold("\e[1m").
+c_dim("\e[2m").
+c_cyan("\e[36m").
+c_green("\e[32m").
+c_yellow("\e[33m").
+c_white("\e[97m").
+
+%% Guides is a list of atoms: 'pipe' or 'space', one per ancestor level.
+%% 'pipe' means the ancestor has more siblings -> draw │
+%% 'space' means the ancestor was the last child -> draw blank
+
+explain(Proof) :-
+    explain_(Proof, root, true).
+
+explain_(proof(Goal, by(fact, _)), Guides, IsLast) :-
+    print_prefix(Guides, IsLast),
+    c_white(W), c_dim(D), c_green(G), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w~w~w ~w←~w ~w~wfact~w~n",
+           [B, W, Goal, R, D, R, B, G, R]),
+    write(S).
+explain_(proof(Goal, by(Rule, [])), Guides, IsLast) :-
+    print_prefix(Guides, IsLast),
+    c_white(W), c_dim(D), c_yellow(Y), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w~w~w ~w←~w ~w~w~w~w~n",
+           [B, W, Goal, R, D, R, B, Y, Rule, R]),
+    write(S).
+explain_(proof(Goal, by(Rule, Subs)), Guides, IsLast) :-
+    Subs \= [],
+    print_prefix(Guides, IsLast),
+    c_white(W), c_dim(D), c_yellow(Y), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w~w~w ~w←~w ~w~w~w~w~n",
+           [B, W, Goal, R, D, R, B, Y, Rule, R]),
+    write(S),
+    (   Guides == root
+    ->  ChildGuides = []
+    ;   IsLast == true
+    ->  ChildGuides = [space|Guides]
+    ;   ChildGuides = [pipe|Guides]
+    ),
+    explain_list(Subs, ChildGuides).
+
+explain_list([], _).
+explain_list([P], Guides) :-
+    !,
+    explain_(P, Guides, true).
+explain_list([P|Ps], Guides) :-
+    explain_(P, Guides, false),
+    explain_list(Ps, Guides).
+
+print_prefix(root, _) :- !.
+print_prefix(Guides, IsLast) :-
+    reverse(Guides, RevGuides),
+    print_guide_columns(RevGuides),
+    c_dim(D), c_reset(R),
+    (   IsLast == true
+    ->  format("~w└── ~w", [D, R])
+    ;   format("~w├── ~w", [D, R])
+    ).
+
+print_guide_columns([]).
+print_guide_columns([G|Gs]) :-
+    c_dim(D), c_reset(R),
+    (   G == pipe
+    ->  format("~w│   ~w", [D, R])
+    ;   write("    ")
+    ),
+    print_guide_columns(Gs).
