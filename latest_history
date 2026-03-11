@@ -1,7 +1,0 @@
- 1992  opam switch create hallmark ocaml-base-compiler.5.2.1
- 2006  opam repo add coq-released https://coq.inria.fr/opam/released
- 2007  opam update
- 1996  opam pin add rocq-core 9.1.0
- 2000  opam install cmdliner
- 1998  opam install rocq-stdlib
- 2009  opam install rocq-metarocq
