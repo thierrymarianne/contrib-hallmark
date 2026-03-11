@@ -1,1 +1,6 @@
-*.pdf
+_build/
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
