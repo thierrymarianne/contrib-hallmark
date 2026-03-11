@@ -1,0 +1,16 @@
+---
+description: Consult local knowledge base before guessing at niche tech APIs
+alwaysApply: true
+---
+
+# Consult the Context Knowledge Base
+
+Before writing code or making claims about niche technologies (Rocq, MetaRocq, Prolog, SWI-Prolog, CLP, tabling, etc.), **always** check `docs/context/TOC.md` first.
+
+## Rules
+
+- Read `docs/context/TOC.md` to find the relevant context file.
+- Read the context file **before** writing any code that depends on it.
+- If no context file exists for the topic, fetch the information (web search or installed source files) and create one per the `context-on-fetch` rule **before** proceeding.
+- Never guess at API signatures, type names, or function names when a context file covers them — use the documented facts.
+- When a context file turns out to be wrong or incomplete, update it immediately.
