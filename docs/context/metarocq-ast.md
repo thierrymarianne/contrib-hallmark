@@ -296,3 +296,53 @@ So `tRel 0` in `cstr_type` refers to the *last* inductive in the block, not to t
 For a non-mutual inductive, `tRel 0` in `cstr_type` refers to the inductive itself.
 
 The first `ind_npars` binders in the telescope are *parameters* (shared across all constructors).
+
+## Bytestring API (Utils/bytestring.v, Utils/MRString.v)
+
+```coq
+(* String type — NOT Stdlib's string *)
+Module String.
+  Inductive t := EmptyString | String (_ : Byte.byte) (_ : t).
+  (* string = String.t via notation *)
+
+  Fixpoint append (x y : t) : t := ...
+  Notation "x ++ y" := (append x y) : bs_scope.
+
+  Fixpoint concat (sep : t) (s : list t) : t := ...  (* join with separator *)
+  Fixpoint length (l : t) : nat := ...
+  Fixpoint substring (n m : nat) (s : t) : t := ...
+  Fixpoint eqb (a b : t) : bool := ...
+end.
+
+(* MRString helpers *)
+Definition string_of_nat n : string := string_of_uint (Nat.to_uint n).
+Definition nl : string := String.String "010"%byte String.EmptyString.
+Definition print_list {A} (f : A -> string) (sep : string) (l : list A) : string := ...
+
+(* Open bs_scope for ++ on bytestrings *)
+Local Open Scope bs_scope.
+```
+
+**Imports:** `From MetaRocq.Utils Require Import bytestring MRString.`
+
+## Extraction (Stdlib)
+
+```coq
+(* Import extraction plugin *)
+From Stdlib Require Import extraction.Extraction.
+(* Optional: map nat/bool/list to OCaml builtins *)
+From Stdlib Require Import extraction.ExtrOcamlBasic.
+
+(* Generate a single .ml file *)
+Extraction "output.ml" func1 func2.
+(* Or per-module extraction *)
+Separate Extraction func1 func2.
+```
+
+**Dune stanza** (`rocq.extraction`):
+```lisp
+(rocq.extraction
+ (prelude Extract)
+ (extracted_modules module1 module2)
+ (theories Theory1 Theory2 ...))
+```

@@ -4,7 +4,10 @@
     - [BIndex]:     a universally quantified variable (becomes a Prolog variable)
     - [BRecursive]: a premise that applies the inductive being translated
     - [BExternal]:  a premise that applies a different predicate
-    - [BErased]:    a sort/universe binder (Type, Prop, etc.) — dropped *)
+    - [BErased]:    a sort/universe binder (Type, Prop, etc.) — dropped
+
+    Named binders ([forall x : T, ...]) are treated as value variables.
+    Anonymous binders ([T -> ...]) are treated as premises. *)
 
 From MetaRocq.Template Require Import All.
 From MetaRocq.Common Require Import Kernames.
@@ -42,19 +45,25 @@ Definition get_app_head (t : term) : option (kername * list term) :=
   | _ => None
   end.
 
-(** Classify a single binding given the kername of the inductive being translated. *)
-Definition classify_binding (ind_kn : kername) (ty : term) : binding_class :=
+(** Classify a single binding.
+    Named binders are value variables; anonymous binders are premises. *)
+Definition classify_binding (ind_kn : kername) (na : aname) (ty : term)
+  : binding_class :=
   if is_sort ty then BErased
   else match is_ind_app ind_kn ty with
   | Some args => BRecursive args
   | None =>
-    match get_app_head ty with
-    | Some (kn, args) => BExternal kn args
-    | None => BIndex
+    match binder_name na with
+    | nNamed _ => BIndex
+    | nAnon =>
+      match get_app_head ty with
+      | Some (kn, args) => BExternal kn args
+      | None => BIndex
+      end
     end
   end.
 
 (** Classify every binding in a telescope. *)
 Definition classify_all (ind_kn : kername) (bindings : list (aname * term))
   : list binding_class :=
-  map (fun '(_, ty) => classify_binding ind_kn ty) bindings.
+  map (fun '(na, ty) => classify_binding ind_kn na ty) bindings.

@@ -1,0 +1,6 @@
+(rocq.extraction
+ (prelude Extract)
+ (extracted_modules hallmark)
+ (theories Stdlib Ltac2 Equations
+           MetaRocq.Utils MetaRocq.Common MetaRocq.Template
+           Hallmark))
