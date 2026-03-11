@@ -25,19 +25,17 @@ decades.
 The question is whether we can close the gap between a verified
 specification and an executable engine.
 
-Hallmark closes that gap through _partial evaluation_
-@futamura1971partial.
-It takes inductive type definitions written in the Rocq proof
-assistant — fully verified specifications of inference rules — and
-specializes them into equivalent Prolog programs via MetaRocq,
+Hallmark closes that gap through _staged compilation_.
+It takes a subset of Rocq types written in the Rocq proof
+assistant — types whose structure directly encodes logical rules —
+and compiles them into equivalent Prolog programs via MetaRocq,
 a framework for inspecting and transforming Rocq terms from within
 Rocq itself.
-This is an instance of the first Futamura projection:
-specializing a general interpreter for a particular program yields
-a compiled, executable artifact.
-Here, the "interpreter" is Rocq's type theory, the "program" is the
-inductive definition, and the compiled output is a set of Prolog
-clauses ready for backward-chaining execution.
+The first stage is verification: Rocq's type checker ensures that
+the rules are consistent and well-founded.
+The second stage is translation: Hallmark reads the verified
+definitions and emits Prolog clauses ready for backward-chaining
+execution.
 
 Throughout this document, we develop a single running example:
 an access-control policy determining whether a user is _allowed_ to
@@ -48,12 +46,11 @@ structure to illustrate every feature of the pipeline.
 
 The rest of this document builds toward that pipeline step by step.
 We begin with the logical foundations that underpin both Rocq and
-Prolog: inference rules and Horn clauses (@sec-logic).
-We then show how Prolog turns those clauses into a running engine
+Prolog (@sec-logic).
+We then show how Prolog turns logical clauses into a running engine
 (@sec-prolog).
-Next, we introduce the Curry-Howard correspondence and Rocq's type
-system, revealing that inductive types _are_ inference rules
-(@sec-curry-howard).
+Next, we introduce Rocq's type system and show that certain types
+directly encode logical rules (@sec-curry-howard).
 With both sides in place, we make the connection explicit and describe
 how MetaRocq enables the translation (@sec-bridge).
 We then devote a full section to the proofs one can carry out about
