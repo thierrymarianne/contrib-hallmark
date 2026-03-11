@@ -32,7 +32,7 @@ Definition delegate_clause :=
 
 Example print_admin_rule :
   print_clause admin_all_clause =
-  "allowed(admin, X0) :- rule(admin_all)."
+  "allowed(admin, _) :- rule(admin_all)."
 := eq_refl.
 
 Example print_delegate_clause :

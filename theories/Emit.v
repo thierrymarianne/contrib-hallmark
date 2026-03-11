@@ -8,26 +8,45 @@
 From MetaRocq.Template Require Import All.
 From MetaRocq.Utils Require Import bytestring MRString.
 From Hallmark Require Import Clause.
-From Stdlib Require Import List Bool.
+From Stdlib Require Import List Bool PeanoNat.
 Import ListNotations.
 
 Local Open Scope bs_scope.
 
-(** Render a Prolog term: [PVar n] -> "Xn", [PAtom a] -> "a",
-    [PApp f args] -> "f(a1, a2, ...)". *)
-Fixpoint print_term (t : prolog_term) : string :=
+(** Collect all variable indices from a term. *)
+Fixpoint collect_vars (t : prolog_term) : list nat :=
   match t with
-  | PVar n => "X" ++ string_of_nat n
+  | PVar n => [n]
+  | PAtom _ => []
+  | PApp _ args => flat_map collect_vars args
+  end.
+
+(** Count occurrences of [n] in a list. *)
+Fixpoint count (n : nat) (l : list nat) : nat :=
+  match l with
+  | [] => 0
+  | x :: rest => (if Nat.eqb x n then 1 else 0) + count n rest
+  end.
+
+(** Render a Prolog term. Singleton variables (appearing once in the
+    clause) are printed as [_]; others as [X0], [X1], etc. *)
+Fixpoint print_term_ctx (vars : list nat) (t : prolog_term) : string :=
+  match t with
+  | PVar n => if count n vars =? 1 then "_" else "X" ++ string_of_nat n
   | PAtom a => a
   | PApp f args =>
     f ++ "(" ++
     (fix go (l : list prolog_term) : string :=
       match l with
       | [] => ""
-      | [x] => print_term x
-      | x :: rest => print_term x ++ ", " ++ go rest
+      | [x] => print_term_ctx vars x
+      | x :: rest => print_term_ctx vars x ++ ", " ++ go rest
       end) args ++ ")"
   end.
+
+(** Render a term without singleton analysis (for standalone use). *)
+Definition print_term (t : prolog_term) : string :=
+  print_term_ctx [] t.
 
 (** Does a term contain any [PVar]? *)
 Fixpoint has_var (t : prolog_term) : bool :=
@@ -44,18 +63,22 @@ Fixpoint has_var (t : prolog_term) : bool :=
 
 (** Render a clause.
     - Ground facts (no premises, no variables): [head.]
-    - Everything else carries [rule(name)] for audit trail. *)
+    - Everything else carries [rule(name)] for audit trail.
+    Singleton variables are printed as [_]. *)
 Definition print_clause (c : clause) : string :=
-  let head := print_term (cl_head c) in
+  let all_vars := List.app (collect_vars (cl_head c))
+                           (flat_map collect_vars (cl_body c)) in
+  let pt := print_term_ctx all_vars in
+  let head := pt (cl_head c) in
   let needs_tag := negb (match cl_body c with [] => true | _ => false end)
                    || has_var (cl_head c) in
   if needs_tag then
-    let rule_tag := print_term (PApp "rule" [PAtom (cl_name c)]) in
+    let rule_tag := pt (PApp "rule" [PAtom (cl_name c)]) in
     match cl_body c with
     | [] => head ++ " :- " ++ rule_tag ++ "."
     | body =>
       head ++ " :- " ++ rule_tag ++ ", " ++
-      String.concat ", " (map print_term body) ++ "."
+      String.concat ", " (map pt body) ++ "."
     end
   else
     head ++ ".".

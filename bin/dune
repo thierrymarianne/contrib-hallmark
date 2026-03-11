@@ -1,3 +1,12 @@
+(rule
+ (target why_interp.ml)
+ (deps ../prolog/why.pl)
+ (action (with-stdout-to %{target}
+  (progn
+   (echo "let contents = {pl|")
+   (cat ../prolog/why.pl)
+   (echo "|pl}")))))
+
 (executable
  (name hallmark)
  (libraries rocq-runtime.toplevel cmdliner))

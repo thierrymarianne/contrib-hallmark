@@ -28,18 +28,20 @@ let captured = Buffer.create 4096
 let output_path = ref None
 let driver_tmp = ref None
 
+let ensure_nl s =
+  if String.ends_with ~suffix:"\n" s then s else s ^ "\n"
+
 let write_output () =
   let prolog = Buffer.contents captured in
   if String.length prolog = 0 then ()
   else
+    let full = ensure_nl prolog ^ "\n" ^ Why_interp.contents in
+    let full = ensure_nl full in
     match !output_path with
-    | None ->
-      print_string prolog;
-      if not (String.ends_with ~suffix:"\n" prolog) then print_char '\n'
+    | None -> print_string full
     | Some path ->
       let oc = open_out path in
-      output_string oc prolog;
-      if not (String.ends_with ~suffix:"\n" prolog) then output_char oc '\n';
+      output_string oc full;
       close_out oc;
       Printf.eprintf "Wrote %s\n" path
 
