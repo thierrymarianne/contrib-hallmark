@@ -35,10 +35,10 @@ Definition delegate_bindings :=
 
 Example delegate_has_recursive :
   existsb (fun c => match c with BRecursive _ => true | _ => false end)
-    (classify_all allowed_ind_kn delegate_bindings) = true
+    (classify_all [] allowed_ind_kn delegate_bindings) = true
 := eq_refl.
 
 Example delegate_has_external :
   existsb (fun c => match c with BExternal _ _ => true | _ => false end)
-    (classify_all allowed_ind_kn delegate_bindings) = true
+    (classify_all [] allowed_ind_kn delegate_bindings) = true
 := eq_refl.

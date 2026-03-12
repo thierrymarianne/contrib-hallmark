@@ -9,11 +9,13 @@ From MetaRocq.Template Require Import All.
 From Stdlib Require Import List String.
 Import ListNotations.
 
-(** A Prolog term: variable, atom, or compound [f(args...)]. *)
+(** A Prolog term: variable, atom, compound [f(args...)],
+    or infix CLP constraint [lhs op rhs]. *)
 Inductive prolog_term :=
-| PVar  : nat -> prolog_term
-| PAtom : ident -> prolog_term
-| PApp  : ident -> list prolog_term -> prolog_term.
+| PVar        : nat -> prolog_term
+| PAtom       : ident -> prolog_term
+| PApp        : ident -> list prolog_term -> prolog_term
+| PConstraint : ident -> prolog_term -> prolog_term -> prolog_term.
 
 (** A Horn clause [head :- body]. Empty body means a fact.
     [cl_witness_args] carries the Rocq constructor's argument template:

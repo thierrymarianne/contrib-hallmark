@@ -8,6 +8,8 @@
 %%   proof(Goal, by(Rule, []))                 — rule-tagged axiom
 %%   proof(Goal, by(Rule, [Sub1, ...]))        — rule with sub-proofs
 
+why(clpfd_check(C), proof(clpfd_check(C), by(constraint, []))) :-
+    call(C), !.
 why(Goal, proof(Goal, by(fact, []))) :-
     clause(Goal, true), !.
 why(Goal, proof(Goal, by(Rule, SubProofs))) :-
@@ -90,6 +92,7 @@ rocq_string(app(Name, Args), S) :-
     atomic_list_concat(ArgStrs, ' ', ArgsJoined),
     format(atom(S), "(~w ~w)", [Name, ArgsJoined]).
 
+rocq_string_arg(lia, "ltac:(lia)") :- !.
 rocq_string_arg(Term, S) :-
     rocq_string(Term, S).
 rocq_string_arg(Atom, S) :-
@@ -142,9 +145,32 @@ c_white("\e[97m").
 %% 'pipe' means the ancestor has more siblings -> draw │
 %% 'space' means the ancestor was the last child -> draw blank
 
+clpfd_symbol(#=<, '\x2264\').   %% <=
+clpfd_symbol(#<,  <).
+clpfd_symbol(#>=, '\x2265\').   %% >=
+clpfd_symbol(#>,  >).
+clpfd_symbol(#=,  =).
+clpfd_symbol(#\=, '\x2260\').   %% !=
+
+format_constraint(C, Pretty) :-
+    C =.. [Op, L, R],
+    (clpfd_symbol(Op, Sym) -> true ; Sym = Op),
+    format(atom(Pretty), "~w ~w ~w", [L, Sym, R]),
+    !.
+format_constraint(C, Pretty) :-
+    format(atom(Pretty), "~w", [C]).
+
 explain(Proof) :-
     explain_(Proof, root, true).
 
+explain_(proof(clpfd_check(C), by(constraint, _)), Guides, IsLast) :-
+    !,
+    print_prefix(Guides, IsLast),
+    format_constraint(C, Pretty),
+    c_white(W), c_dim(D), c_cyan(Cy), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w~w ~w\x2190\~w ~w~wconstraint~w~n",
+           [W, Pretty, R, D, R, B, Cy, R]),
+    write(S).
 explain_(proof(Goal, by(fact, _)), Guides, IsLast) :-
     print_prefix(Guides, IsLast),
     c_white(W), c_dim(D), c_green(G), c_bold(B), c_reset(R),

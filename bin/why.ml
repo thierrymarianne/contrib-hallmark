@@ -51,7 +51,7 @@ let run ~rocq_flags ~module_name ~query ~prove =
       in
       let v_path = Filename.temp_file "hallmark_check_" ".v" in
       let oc = open_out v_path in
-      Printf.fprintf oc "Require Import %s.\n%s" module_name check_content;
+      Printf.fprintf oc "Require Import %s.\nFrom Stdlib Require Import Lia.\n%s" module_name check_content;
       close_out oc;
       Printf.eprintf "\n--- Rocq type-check ---\n";
       Printf.eprintf "%s\n" check_content;

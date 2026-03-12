@@ -19,6 +19,7 @@ Fixpoint collect_vars (t : prolog_term) : list nat :=
   | PVar n => [n]
   | PAtom _ => []
   | PApp _ args => flat_map collect_vars args
+  | PConstraint _ l r => collect_vars l ++ collect_vars r
   end.
 
 (** Count occurrences of [n] in a list. *)
@@ -42,6 +43,9 @@ Fixpoint print_term_ctx (vars : list nat) (t : prolog_term) : string :=
       | [x] => print_term_ctx vars x
       | x :: rest => print_term_ctx vars x ++ ", " ++ go rest
       end) args ++ ")"
+  | PConstraint op l r =>
+    "clpfd_check(" ++ print_term_ctx vars l ++ " " ++ op ++ " "
+                   ++ print_term_ctx vars r ++ ")"
   end.
 
 (** Render a term without singleton analysis (for standalone use). *)
@@ -59,6 +63,7 @@ Fixpoint has_var (t : prolog_term) : bool :=
       | [] => false
       | x :: rest => has_var x || any rest
       end) args
+  | PConstraint _ l r => has_var l || has_var r
   end.
 
 (** Render a clause.  Every clause carries a [rule(name)] tag for audit
@@ -110,13 +115,31 @@ Fixpoint is_substring (sub s : string) : bool :=
   | String.String _ s' => is_substring sub s'
   end.
 
+(** Does a term use a CLP constraint? *)
+Definition is_constraint (t : prolog_term) : bool :=
+  match t with
+  | PConstraint _ _ _ => true
+  | _ => false
+  end.
+
+(** Does any clause in the program use CLP(FD) constraints? *)
+Definition has_clpfd (clauses : list clause) : bool :=
+  existsb (fun c => existsb is_constraint (cl_body c)) clauses.
+
 (** Assemble a complete Prolog program.
 
     The [rule(_).] fact at the top ensures that [rule(Name)] — inserted
     as the first body atom of every clause by [print_clause] — always
     succeeds.  The [ctor_witness/4] facts enable proof-witness
-    reconstruction: mapping resolution traces back to Rocq proof terms. *)
+    reconstruction: mapping resolution traces back to Rocq proof terms.
+    When CLP(FD) constraints are present, [:- use_module(library(clpfd)).]
+    is prepended. *)
 Definition print_program (clauses : list clause) : string :=
+  let clp_header :=
+    if has_clpfd clauses
+    then ":- use_module(library(clpfd))." ++ nl
+    else "" in
+  clp_header ++
   "rule(_)." ++ nl ++
   String.concat nl (map print_clause clauses) ++ nl ++
   String.concat nl (map print_ctor_witness clauses) ++ nl.

@@ -11,6 +11,7 @@
 
 From MetaRocq.Template Require Import All.
 From MetaRocq.Common Require Import Kernames.
+From Hallmark Require Import Clp.
 From Stdlib Require Import List.
 Import ListNotations.
 
@@ -18,6 +19,7 @@ Inductive binding_class :=
 | BIndex
 | BRecursive (args : list term)
 | BExternal  (head : kername) (args : list term)
+| BConstraint (op : ident) (args : list term)
 | BErased.
 
 (** True when [t] is a universe sort ([Type], [Prop], [Set]). *)
@@ -46,9 +48,11 @@ Definition get_app_head (t : term) : option (kername * list term) :=
   end.
 
 (** Classify a single binding.
-    Named binders are value variables; anonymous binders are premises. *)
-Definition classify_binding (ind_kn : kername) (na : aname) (ty : term)
-  : binding_class :=
+    Named binders are value variables; anonymous binders are premises.
+    If the head kername appears in [tbl], the binding becomes a
+    [BConstraint] — emitted as a CLP(FD) infix operator. *)
+Definition classify_binding (tbl : clp_table) (ind_kn : kername)
+  (na : aname) (ty : term) : binding_class :=
   if is_sort ty then BErased
   else match is_ind_app ind_kn ty with
   | Some args => BRecursive args
@@ -57,13 +61,17 @@ Definition classify_binding (ind_kn : kername) (na : aname) (ty : term)
     | nNamed _ => BIndex
     | nAnon =>
       match get_app_head ty with
-      | Some (kn, args) => BExternal kn args
+      | Some (kn, args) =>
+        match clp_lookup tbl kn with
+        | Some op => BConstraint op args
+        | None    => BExternal kn args
+        end
       | None => BIndex
       end
     end
   end.
 
 (** Classify every binding in a telescope. *)
-Definition classify_all (ind_kn : kername) (bindings : list (aname * term))
-  : list binding_class :=
-  map (fun '(na, ty) => classify_binding ind_kn na ty) bindings.
+Definition classify_all (tbl : clp_table) (ind_kn : kername)
+  (bindings : list (aname * term)) : list binding_class :=
+  map (fun '(na, ty) => classify_binding tbl ind_kn na ty) bindings.

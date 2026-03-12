@@ -1,0 +1,71 @@
+(** * Clp — CLP(FD) constraint registration
+
+    Maps Rocq proposition heads (kernames) to CLP(FD) operators.
+    The translator consults this table during classification:
+    if a binding's head kername appears in the table, the binding
+    is emitted as a CLP(FD) infix constraint instead of a plain atom.
+
+    Standard mappings are built via [clpfd_defaults], which uses
+    MetaRocq quoting to discover the actual kernames at elaboration
+    time (avoiding hard-coded module paths). *)
+
+From MetaRocq.Template Require Import All.
+From MetaRocq.Utils Require Import bytestring.
+From Stdlib Require Import List.
+Import ListNotations.
+
+Local Open Scope bs_scope.
+
+Record clp_mapping := {
+  clp_head : kername;
+  clp_op   : ident;
+}.
+
+Definition clp_table := list clp_mapping.
+
+(** Look up a kername in the CLP table. *)
+Definition clp_lookup (tbl : clp_table) (kn : kername) : option ident :=
+  let fix go (l : clp_table) :=
+    match l with
+    | [] => None
+    | m :: rest =>
+      if kn == clp_head m then Some (clp_op m)
+      else go rest
+    end
+  in go tbl.
+
+(** Extract the head kername from a quoted proposition.
+    Handles both inductives ([tInd]) and constants ([tConst]). *)
+Definition extract_head_kn (t : term) : option kername :=
+  let '(hd, _) := decompose_app t in
+  match hd with
+  | tInd (mkInd kn _) _ => Some kn
+  | tConst kn _          => Some kn
+  | _                     => None
+  end.
+
+(** Register a single CLP(FD) mapping by quoting a dummy proposition
+    to discover the head kername. *)
+Definition register_clpfd (op : ident) (prop_term : term) : option clp_mapping :=
+  match extract_head_kn prop_term with
+  | Some kn => Some {| clp_head := kn; clp_op := op |}
+  | None    => None
+  end.
+
+(** Build the standard CLP(FD) table at elaboration time.
+    Quotes comparison propositions to discover their kernames. *)
+Definition clpfd_defaults : TemplateMonad clp_table :=
+  tmBind (tmQuote (0 <= 0)) (fun le_tm =>
+  tmBind (tmQuote (0 < 0))  (fun lt_tm =>
+  tmBind (tmQuote (0 >= 0)) (fun ge_tm =>
+  tmBind (tmQuote (0 > 0))  (fun gt_tm =>
+  tmBind (tmQuote (0 = 0))  (fun eq_tm =>
+    let entries := flat_map
+      (fun x => match x with Some e => [e] | None => [] end)
+      [ register_clpfd "#=<" le_tm
+      ; register_clpfd "#<"  lt_tm
+      ; register_clpfd "#>=" ge_tm
+      ; register_clpfd "#>"  gt_tm
+      ; register_clpfd "#="  eq_tm
+      ] in
+    tmReturn entries))))).
