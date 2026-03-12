@@ -24,7 +24,106 @@ why_body((G, Rest), [P | Ps]) :-
     why(G, P),
     why_body(Rest, Ps).
 why_body(G, [P]) :-
+    G \= true, G \= (_, _),
     why(G, P).
+
+%% witness/2 — reconstruct a Rocq proof term from a why/2 proof tree.
+%%
+%% Requires ctor_witness/4 facts (emitted by the Hallmark translator):
+%%
+%%   ctor_witness(Rule, HeadPattern, BodyAtoms, TermTemplate).
+%%
+%%   - HeadPattern : the clause head with shared variables
+%%   - BodyAtoms   : ordered list of body atoms (same variables)
+%%   - TermTemplate: rocq term skeleton — data vars inline,
+%%                   pf(I) for the I-th recursive sub-witness
+%%
+%% Example (hand-written, normally generated):
+%%
+%%   ctor_witness(admin_all,
+%%     allowed(admin, R), [],
+%%     app(admin_all, [R])).
+%%
+%%   ctor_witness(delegate,
+%%     allowed(U, R), [manager_of(U, V), allowed(V, R)],
+%%     app(delegate, [U, V, R, pf(0), pf(1)])).
+%%
+%% Usage:
+%%   ?- why(allowed(eve, secret_report), P), witness(P, T).
+%%   ?- why(Goal, P), witness(P, T), print_rocq(T).
+
+witness(proof(Goal, by(fact, [])), axiom(Goal)).
+witness(proof(Goal, by(Rule, SubProofs)), Term) :-
+    ctor_witness(Rule, Goal, BodyAtoms, Template),
+    unify_body(SubProofs, BodyAtoms),
+    fill_template(Template, SubProofs, Term).
+
+unify_body([], []).
+unify_body([proof(G, _) | Ps], [G | Bs]) :-
+    unify_body(Ps, Bs).
+
+fill_template(app(Name, Args), SubProofs, app(Name, Filled)) :-
+    maplist(fill_arg(SubProofs), Args, Filled).
+
+fill_arg(SubProofs, pf(I), SubWitness) :-
+    nth0(I, SubProofs, SubProof),
+    witness(SubProof, SubWitness).
+fill_arg(_, Arg, Arg) :-
+    \+ functor(Arg, pf, 1).
+
+%% print_rocq/1 — serialize a witness term to Rocq syntax on stdout.
+%%
+%% Usage:
+%%   ?- why(Goal, P), witness(P, T), print_rocq(T).
+
+print_rocq(Term) :-
+    rocq_string(Term, S),
+    write(S), nl.
+
+rocq_string(axiom(Goal), S) :-
+    goal_axiom_name(Goal, S).
+rocq_string(app(Name, []), S) :-
+    atom_string(Name, S).
+rocq_string(app(Name, Args), S) :-
+    Args \= [],
+    maplist(rocq_string_arg, Args, ArgStrs),
+    atomic_list_concat(ArgStrs, ' ', ArgsJoined),
+    format(atom(S), "(~w ~w)", [Name, ArgsJoined]).
+
+rocq_string_arg(Term, S) :-
+    rocq_string(Term, S).
+rocq_string_arg(Atom, S) :-
+    \+ functor(Atom, app, 2),
+    \+ functor(Atom, axiom, 1),
+    term_to_atom(Atom, S).
+
+goal_axiom_name(Goal, S) :-
+    Goal =.. [Pred | Args],
+    maplist(term_to_atom, Args, ArgStrs),
+    atomic_list_concat([Pred | ArgStrs], '_', S).
+
+%% rocq_goal_string/2 — convert a Prolog goal to Rocq type syntax.
+%%   allowed(eve, secret_report) → "allowed eve secret_report"
+
+rocq_goal_string(Goal, S) :-
+    Goal =.. [Pred | Args],
+    maplist(rocq_atom_string, Args, ArgStrs),
+    atomic_list_concat([Pred | ArgStrs], ' ', S).
+
+rocq_atom_string(A, S) :- atom(A), !, atom_string(A, S).
+rocq_atom_string(T, S) :- term_to_atom(T, S).
+
+%% write_check/3 — write a Rocq Check statement to a file.
+%%
+%% Usage (from the hallmark CLI):
+%%   ?- why(Goal, P), witness(P, T), write_check('/tmp/check.v', T, Goal).
+
+write_check(File, Term, Goal) :-
+    rocq_string(Term, TermS),
+    rocq_goal_string(Goal, GoalS),
+    open(File, write, Out),
+    format(Out, "Check (~w : ~w).~n", [TermS, GoalS]),
+    close(Out).
 
 %% explain/1 — pretty-print a proof tree with ANSI colors and tree guides.
 %%
@@ -49,14 +148,14 @@ explain(Proof) :-
 explain_(proof(Goal, by(fact, _)), Guides, IsLast) :-
     print_prefix(Guides, IsLast),
     c_white(W), c_dim(D), c_green(G), c_bold(B), c_reset(R),
-    format(atom(S), "~w~w~w~w ~w←~w ~w~wfact~w~n",
-           [B, W, Goal, R, D, R, B, G, R]),
+    format(atom(S), "~w~w~w ~w←~w ~w~wfact~w~n",
+           [W, Goal, R, D, R, B, G, R]),
     write(S).
-explain_(proof(Goal, by(Rule, [])), Guides, IsLast) :-
+explain_(proof(Goal, by(_, [])), Guides, IsLast) :-
     print_prefix(Guides, IsLast),
-    c_white(W), c_dim(D), c_yellow(Y), c_bold(B), c_reset(R),
-    format(atom(S), "~w~w~w~w ~w←~w ~w~w~w~w~n",
-           [B, W, Goal, R, D, R, B, Y, Rule, R]),
+    c_white(W), c_dim(D), c_green(G), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w~w ~w←~w ~w~wfact~w~n",
+           [W, Goal, R, D, R, B, G, R]),
     write(S).
 explain_(proof(Goal, by(Rule, Subs)), Guides, IsLast) :-
     Subs \= [],

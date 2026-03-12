@@ -22,13 +22,17 @@ Example print_var :
 Definition admin_all_clause :=
   {| cl_name := "admin_all";
      cl_head := PApp "allowed" [PAtom "admin"; PVar 0];
-     cl_body := [] |}.
+     cl_body := [];
+     cl_witness_args := [PVar 0] |}.
 
 Definition delegate_clause :=
   {| cl_name := "delegate";
      cl_head := PApp "allowed" [PVar 0; PVar 2];
      cl_body := [PApp "manager_of" [PVar 0; PVar 1];
-                 PApp "allowed" [PVar 1; PVar 2]] |}.
+                 PApp "allowed" [PVar 1; PVar 2]];
+     cl_witness_args := [PVar 0; PVar 1; PVar 2;
+                         PApp "pf" [PAtom "0"];
+                         PApp "pf" [PAtom "1"]] |}.
 
 Example print_admin_rule :
   print_clause admin_all_clause =

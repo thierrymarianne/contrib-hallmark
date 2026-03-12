@@ -38,15 +38,19 @@ let query =
   let doc = "Prolog query to explain (e.g. \"allowed(admin, secret_report)\")." in
   Arg.(required & pos 1 (some string) None & info [] ~docv:"QUERY" ~doc)
 
-let why_run module_name query =
+let prove =
+  let doc = "Reconstruct a Rocq proof term and type-check it." in
+  Arg.(value & flag & info [ "prove" ] ~doc)
+
+let why_run module_name query prove =
   let rocq_flags = Loadpath.discover module_name in
-  Why.run ~rocq_flags ~module_name ~query
+  Why.run ~rocq_flags ~module_name ~query ~prove
 
 let why_cmd =
   let doc = "Compile and explain a Prolog query with a proof tree." in
   let info = Cmd.info "why" ~doc in
   Cmd.v info
-    Term.(const why_run $ why_module_name $ query)
+    Term.(const why_run $ why_module_name $ query $ prove)
 
 (* -- loadpath subcommand ------------------------------------------------- *)
 

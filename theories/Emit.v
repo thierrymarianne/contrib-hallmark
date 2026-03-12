@@ -61,27 +61,37 @@ Fixpoint has_var (t : prolog_term) : bool :=
       end) args
   end.
 
-(** Render a clause.
-    - Ground facts (no premises, no variables): [head.]
-    - Everything else carries [rule(name)] for audit trail.
-    Singleton variables are printed as [_]. *)
+(** Render a clause.  Every clause carries a [rule(name)] tag for audit
+    trail and witness reconstruction. Singleton variables print as [_]. *)
 Definition print_clause (c : clause) : string :=
   let all_vars := List.app (collect_vars (cl_head c))
                            (flat_map collect_vars (cl_body c)) in
   let pt := print_term_ctx all_vars in
   let head := pt (cl_head c) in
-  let needs_tag := negb (match cl_body c with [] => true | _ => false end)
-                   || has_var (cl_head c) in
-  if needs_tag then
-    let rule_tag := pt (PApp "rule" [PAtom (cl_name c)]) in
-    match cl_body c with
-    | [] => head ++ " :- " ++ rule_tag ++ "."
-    | body =>
-      head ++ " :- " ++ rule_tag ++ ", " ++
-      String.concat ", " (map pt body) ++ "."
-    end
-  else
-    head ++ ".".
+  let rule_tag := pt (PApp "rule" [PAtom (cl_name c)]) in
+  match cl_body c with
+  | [] => head ++ " :- " ++ rule_tag ++ "."
+  | body =>
+    head ++ " :- " ++ rule_tag ++ ", " ++
+    String.concat ", " (map pt body) ++ "."
+  end.
+
+(** Render a [ctor_witness/4] fact for proof-witness reconstruction.
+
+    Emits: [ctor_witness(Name, Head, [Body...], app(Name, [Args...])).]
+    where [Args] interleaves data variables and [pf(I)] proof slots. *)
+Definition print_ctor_witness (c : clause) : string :=
+  let all_vars := List.app (collect_vars (cl_head c))
+                    (List.app (flat_map collect_vars (cl_body c))
+                              (flat_map collect_vars (cl_witness_args c))) in
+  let pt := print_term_ctx all_vars in
+  let head := pt (cl_head c) in
+  let body_strs := map pt (cl_body c) in
+  let arg_strs := map pt (cl_witness_args c) in
+  "ctor_witness(" ++ cl_name c ++ ", " ++
+    head ++ ", " ++
+    "[" ++ String.concat ", " body_strs ++ "], " ++
+    "app(" ++ cl_name c ++ ", [" ++ String.concat ", " arg_strs ++ "])).".
 
 (** Check whether [pre] is a prefix of [s]. *)
 Fixpoint is_prefix (pre s : string) : bool :=
@@ -104,7 +114,9 @@ Fixpoint is_substring (sub s : string) : bool :=
 
     The [rule(_).] fact at the top ensures that [rule(Name)] — inserted
     as the first body atom of every clause by [print_clause] — always
-    succeeds. This lets users inspect which constructor fired during a
-    derivation (e.g. via [clause/2]) without adding runtime cost. *)
+    succeeds.  The [ctor_witness/4] facts enable proof-witness
+    reconstruction: mapping resolution traces back to Rocq proof terms. *)
 Definition print_program (clauses : list clause) : string :=
-  "rule(_)." ++ nl ++ String.concat nl (map print_clause clauses) ++ nl.
+  "rule(_)." ++ nl ++
+  String.concat nl (map print_clause clauses) ++ nl ++
+  String.concat nl (map print_ctor_witness clauses) ++ nl.

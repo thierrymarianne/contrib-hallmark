@@ -15,9 +15,12 @@ Inductive prolog_term :=
 | PAtom : ident -> prolog_term
 | PApp  : ident -> list prolog_term -> prolog_term.
 
-(** A Horn clause [head :- body]. Empty body means a fact. *)
+(** A Horn clause [head :- body]. Empty body means a fact.
+    [cl_witness_args] carries the Rocq constructor's argument template:
+    data variables as [PVar i] and proof slots as [PApp "pf" [PAtom n]]. *)
 Record clause := {
   cl_name : ident;
   cl_head : prolog_term;
   cl_body : list prolog_term;
+  cl_witness_args : list prolog_term;
 }.

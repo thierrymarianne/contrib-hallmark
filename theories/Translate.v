@@ -10,6 +10,7 @@
     [tRel n] at depth [d] refers to binding [d - 1 - n]. *)
 
 From MetaRocq.Template Require Import All.
+From MetaRocq.Utils Require Import bytestring MRString.
 From Hallmark Require Import Clause Telescope Classify Lookup.
 From Stdlib Require Import List.
 Import ListNotations.
@@ -60,6 +61,27 @@ Definition extract_body (Σ : global_env) (ind_kn : kername)
     end
   in go 0 classes.
 
+(** Build the Rocq constructor argument template from classified bindings.
+    [BIndex] at position [i] becomes [PVar i] (a data variable).
+    [BRecursive]/[BExternal] becomes [PApp "pf" [PAtom j]] (proof slot).
+    [BErased] bindings are dropped. *)
+Fixpoint build_witness_args_aux (cs : list binding_class) (i body_idx : nat)
+  : list prolog_term :=
+  match cs with
+  | [] => []
+  | bc :: rest =>
+    match bc with
+    | BIndex => PVar i :: build_witness_args_aux rest (S i) body_idx
+    | BRecursive _ | BExternal _ _ =>
+      PApp "pf"%bs [PAtom (string_of_nat body_idx)]
+        :: build_witness_args_aux rest (S i) (S body_idx)
+    | BErased => build_witness_args_aux rest (S i) body_idx
+    end
+  end.
+
+Definition build_witness_args (classes : list binding_class) : list prolog_term :=
+  build_witness_args_aux classes 0 0.
+
 (** Translate one constructor (already instantiated, parameters stripped).
     For nullary constructors (empty telescope, no conclusion args),
     the constructor name is injected as an atom argument in the head:
@@ -77,7 +99,9 @@ Definition translate_constructor (Σ : global_env) (ind_kn : kername)
       | _ => head
       end in
     let body := extract_body Σ ind_kn classes in
-    Some {| cl_name := name; cl_head := head'; cl_body := body |}
+    let wargs := build_witness_args classes in
+    Some {| cl_name := name; cl_head := head'; cl_body := body;
+            cl_witness_args := wargs |}
   | None => None
   end.
 

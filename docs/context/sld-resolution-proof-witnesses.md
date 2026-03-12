@@ -267,6 +267,50 @@ The `prolog_prooftree` module (in the ddebug pack) captures derivation trees for
 
 ---
 
+## 6. Implementation in Hallmark
+
+### 6.1 Emitter-Generated Metadata
+
+The Hallmark translator emits `ctor_witness/4` facts alongside each Prolog clause:
+
+```prolog
+ctor_witness(Rule, HeadPattern, BodyAtoms, app(Rule, TemplateArgs)).
+```
+
+- **HeadPattern**: clause head with Prolog variables matching the clause
+- **BodyAtoms**: ordered list of body atoms (same variables)
+- **TemplateArgs**: interleaving of data variables (`Xi`) and proof slots (`pf(I)`)
+
+Example for `delegate`:
+```prolog
+ctor_witness(delegate,
+  allowed(X0, X2), [manager_of(X0, X1), allowed(X1, X2)],
+  app(delegate, [X0, X1, X2, pf(0), pf(1)])).
+```
+
+### 6.2 Witness Reconstruction (`witness/2`)
+
+The `witness/2` predicate in `why.pl` walks a `why/2` proof tree and rebuilds the Rocq term:
+
+1. Unify the proof tree's goal with the `ctor_witness` head pattern (binds head-position data vars)
+2. Unify each subproof's goal with the corresponding body atom (binds body-position data vars)
+3. Replace `pf(I)` slots with recursively reconstructed sub-witnesses
+4. External facts (no `ctor_witness`) produce `axiom(Goal)` placeholders
+
+### 6.3 Round-Trip Certification (`--prove`)
+
+The `hallmark why --prove` flag completes the round-trip:
+
+1. Run `why/2` to capture the proof tree
+2. Run `witness/2` to reconstruct the Rocq term
+3. Serialize to a `Check (term : type).` statement
+4. Feed to `coqc` with the original module's load paths
+5. Report pass/fail
+
+This makes the Prolog engine an **untrusted oracle** — if any component (translator, engine, meta-interpreter, witness reconstructor) has a bug, the Rocq type-checker catches it.
+
+---
+
 ## References
 
 - Wikipedia: [SLD resolution](https://en.wikipedia.org/wiki/SLD_resolution)
