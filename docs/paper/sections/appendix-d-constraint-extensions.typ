@@ -6,71 +6,79 @@ The Hallmark pipeline presented so far translates inductive constructors
 into pure Prolog clauses — facts and rules built from atoms and
 unification.
 This covers a wide range of rule systems, but many real-world
-specifications involve _constraints_: arithmetic inequalities,
-boolean combinations, or linear bounds that go beyond simple
-pattern matching.
+specifications involve _arithmetic constraints_: age thresholds,
+score bounds, counts, priorities.
 
-SWI-Prolog provides a family of Constraint Logic Programming (CLP)
-libraries that extend the basic search with domain-specific solvers.
-Rather than enumerating values, these libraries let the engine post
-constraints on variables and propagate them, pruning the search space
-before any backtracking occurs.
+SWI-Prolog's CLP(FD) library extends backward chaining with a
+finite-domain constraint solver.
+Rather than enumerating integer values, the engine posts constraints
+on variables and propagates them, pruning the search space before
+any backtracking occurs.
+Hallmark supports CLP(FD) for the five standard comparison
+predicates over `nat`.
 
-The challenge is to connect Rocq propositions — which express
-constraints through their type structure — to the appropriate CLP
-syntax on the Prolog side.
-Hallmark solves this with a _typeclass-driven_ bridge: the translator
-looks up typeclass instances to decide how a given Rocq premise should
-be emitted.
+== The CLP(FD) Operator Table
 
-== The Emittable Typeclass
+Hallmark does not use a typeclass or any user-extensible mechanism
+for constraints.
+Instead, `clpfd_defaults` in `theories/Clp.v` builds a fixed table
+at elaboration time by quoting five standard comparison propositions
+and recording their kernames:
 
-At the core of the bridge is a typeclass that marks a Rocq proposition
-as translatable to a specific Prolog construct:
+#figure(
+  table(
+    columns: 3,
+    align: (left, center, left),
+    table.header[*Rocq proposition*][*Quoted kername*][*CLP(FD) operator*],
+    [`n <= m`], [`Nat.le`],  [`#=<`],
+    [`n < m`],  [`Nat.lt`],  [`#<`],
+    [`n >= m`], [`Nat.ge`],  [`#>=`],
+    [`n > m`],  [`Nat.gt`],  [`#>`],
+    [`n = m`],  [`Logic.eq`],[`#=`],
+  ),
+  caption: [The five built-in CLP(FD) mappings.],
+) <fig-clpfd-table>
 
-```coq
-Class Emittable (P : Prop) := {
-  emit : string;
-}.
+Quoting is done with MetaRocq's `tmQuote` so the kernames are
+resolved at elaboration time rather than hard-coded as strings.
+This makes the table robust to changes in module paths across
+Rocq versions.
+
+== Classification and Emission
+
+During Stage 2 (@sec-hallmark), `classify_binding` checks every
+anonymous binder against the table.
+An anonymous binder whose head kername appears in the table is
+classified as `BConstraint op args` — a new binding class distinct
+from `BExternal`.
+
+During emission, a `BConstraint` binding becomes a `PConstraint`
+node in the internal IR, which the pretty-printer renders as:
+
+```prolog
+clpfd_check(L op R)
 ```
 
-Every Rocq proposition that carries an `Emittable` instance is
-recognized by the translator during constructor analysis.
-Instead of emitting a plain Prolog atom, the translator inserts the
-string provided by `emit` — which can be a CLP constraint expression,
-a built-in predicate, or any valid Prolog goal.
+The `clpfd_check/1` wrapper is defined at the top of the generated
+file:
 
-For standard propositions (applications of inductive predicates),
-Hallmark generates the instance automatically.
-For constraint-bearing propositions, the user provides instances that
-target the appropriate CLP library.
-
-== CLP(FD) — Integer Constraints
-
-Many rule systems involve conditions on integer quantities: ages,
-thresholds, counts, priorities.
-In Rocq, these appear as propositions over `nat` or `Z` using
-comparisons like `le`, `lt`, or `Nat.leb`.
-
-The user provides `Emittable` instances that map these to CLP(FD)
-constraints:
-
-```coq
-Instance emit_le (n m : nat) : Emittable (n <= m) := {
-  emit := emit_var n ++ " #=< " ++ emit_var m;
-}.
-
-Instance emit_lt (n m : nat) : Emittable (n < m) := {
-  emit := emit_var n ++ " #< " ++ emit_var m;
-}.
-
-Instance emit_range (n lo hi : nat) :
-    Emittable (lo <= n /\ n <= hi) := {
-  emit := emit_var n ++ " in " ++ show lo ++ ".." ++ show hi;
-}.
+```prolog
+:- meta_predicate clpfd_check(0).
+clpfd_check(C) :- call(C).
 ```
 
-With these instances registered, an inductive definition like:
+It exists solely to make the constraint callable via `call/1` in
+the meta-interpreter; at the solver level it is transparent.
+
+The emitter also detects whether any clause in the program uses a
+`PConstraint` node.
+If so, it prepends `:- use_module(library(clpfd)).` to the output
+automatically — no annotation is required from the user.
+
+== A Concrete Example
+
+The `eligible` predicate from `examples/Eligible.v` combines a
+trusted external predicate with CLP(FD) bounds:
 
 ```coq
 Inductive eligible : person -> nat -> Prop :=
@@ -80,161 +88,66 @@ Inductive eligible : person -> nat -> Prop :=
       age_of p age -> age < 18 -> eligible p age.
 ```
 
-generates Prolog with CLP(FD) constraints rather than unresolvable
-atoms:
+The premise `65 <= age` is an anonymous binder whose type is
+`Nat.le 65 age`.
+`classify_binding` finds `Nat.le` in the table, records the operator
+`#=<` and the argument list `[65, age]`, and emits
+`clpfd_check(65 #=< Age)`.
+Similarly, `age < 18` becomes `clpfd_check(Age #< 18)`.
+
+The complete generated output is:
 
 ```prolog
 :- use_module(library(clpfd)).
-
-eligible(P, Age) :- age_of(P, Age), Age #>= 65.
-eligible(P, Age) :- age_of(P, Age), Age #< 18.
+rule(_).
+eligible(X0, X1) :-
+    rule(senior), age_of(X0, X1), clpfd_check(65 #=< X1).
+eligible(X0, X1) :-
+    rule(minor), age_of(X0, X1), clpfd_check(X1 #< 18).
+ctor_witness(senior, eligible(X0, X1),
+    [age_of(X0, X1), clpfd_check(65 #=< X1)],
+    app(senior, [X0, X1, pf(0), lia])).
+ctor_witness(minor, eligible(X0, X1),
+    [age_of(X0, X1), clpfd_check(X1 #< 18)],
+    app(minor, [X0, X1, pf(0), lia])).
 ```
 
-The solver handles domain propagation: if `Age` is constrained
-elsewhere, these bounds interact automatically with the rest of the
-search.
+The `lia` atom in the `ctor_witness` argument list marks the slot
+corresponding to the arithmetic premise.
+During proof reconstruction, `rocq_string_arg` maps `lia` to
+`ltac:(lia)`, discharging the arithmetic obligation with Rocq's
+linear-arithmetic tactic rather than attempting to reconstruct it
+structurally.
 
-== CLP(B) — Boolean Constraints
+== Scope and Limitations
 
-Policy engines often involve boolean combinations: feature flags,
-permission bits, mutually exclusive options.
-CLP(B) expresses these as satisfiability constraints over `{0, 1}`
-variables.
+The current implementation covers only CLP(FD) and only the five
+`nat` comparison predicates listed in @fig-clpfd-table.
+There is no support for CLP(B) (boolean satisfiability) or CLP(Q/R)
+(rational/real linear arithmetic), and the table is not
+user-extensible without modifying `clpfd_defaults`.
 
-```coq
-Instance emit_bool_and (a b : bool) :
-    Emittable (a = true /\ b = true) := {
-  emit := "sat(" ++ emit_var a ++ " * " ++ emit_var b ++ ")";
-}.
-
-Instance emit_bool_or (a b : bool) :
-    Emittable (a = true \/ b = true) := {
-  emit := "sat(" ++ emit_var a ++ " + " ++ emit_var b ++ ")";
-}.
-
-Instance emit_bool_implies (a b : bool) :
-    Emittable (a = true -> b = true) := {
-  emit := "sat(" ++ emit_var a ++ " =< " ++ emit_var b ++ ")";
-}.
-```
-
-An access-control policy with feature gates:
-
-```coq
-Inductive feature_access : user -> feature -> Prop :=
-  | beta_tester : forall u f,
-      beta_flag u f ->
-      feature_access u f
-  | premium_or_trial : forall u f p t,
-      premium_flag u p -> trial_flag u t ->
-      (p = true \/ t = true) ->
-      feature_access u f.
-```
-
-translates to:
-
-```prolog
-:- use_module(library(clpb)).
-
-feature_access(U, F) :- beta_flag(U, F).
-feature_access(U, F) :-
-    premium_flag(U, P), trial_flag(U, T),
-    sat(P + T).
-```
-
-The CLP(B) solver determines satisfiability without enumerating all
-combinations of `P` and `T`.
-
-== CLP(Q/R) — Linear Arithmetic
-
-Budget allocation, resource planning, and financial rules involve
-linear constraints over rational or real-valued quantities.
-CLP(Q) handles these with exact rational arithmetic; CLP(R) uses
-floating-point for performance.
-
-```coq
-Instance emit_q_leq (x y : Q) : Emittable (Qle x y) := {
-  emit := "{ " ++ emit_var x ++ " =< " ++ emit_var y ++ " }";
-}.
-
-Instance emit_q_sum (x y z : Q) :
-    Emittable (x + y == z)%Q := {
-  emit := "{ " ++ emit_var x ++ " + "
-               ++ emit_var y ++ " = "
-               ++ emit_var z ++ " }";
-}.
-```
-
-A budget allocation rule:
-
-```coq
-Inductive within_budget :
-    department -> Q -> Q -> Prop :=
-  | budget_ok : forall d spent limit,
-      budget_limit d limit ->
-      (spent <= limit)%Q ->
-      within_budget d spent limit.
-```
-
-generates:
-
-```prolog
-:- use_module(library(clpq)).
-
-within_budget(D, Spent, Limit) :-
-    budget_limit(D, Limit),
-    { Spent =< Limit }.
-```
-
-The Simplex-based solver in CLP(Q) handles the inequality natively,
-without the need to ground `Spent` or `Limit` before the check.
-
-== How the Translator Uses Instances
-
-During the translation stage (@sec-hallmark), when the translator
-encounters a constructor argument whose type is a proposition $P$,
-it proceeds as follows:
-
-+ *Instance lookup.*
-  The translator queries the typeclass database for an instance
-  of `Emittable P`.
-  Because instance resolution in Rocq is itself backward chaining
-  over the instance database, this lookup is automatic and
-  compositional — compound constraints are resolved through the
-  chain of instances.
-
-+ *If an instance is found:* the translator calls `emit` to obtain
-  the Prolog syntax and inserts it directly into the clause body.
-  The appropriate `:- use_module` directive is added to the file
-  header.
-
-+ *If no instance is found:* the translator falls back to the
-  default behavior — treating $P$ as an application of an inductive
-  predicate and emitting a plain Prolog atom.
-
-This design is _open_: users can register new `Emittable` instances
-for custom propositions without modifying the translator itself.
-A library of standard instances for common CLP domains ships with
-Hallmark, covering arithmetic comparisons, boolean connectives, and
-linear constraints.
+Extending coverage to other domains or to user-defined numeric types
+requires adding entries to the kername table and, on the Prolog side,
+the appropriate `:- use_module` header — both mechanical changes
+confined to `theories/Clp.v` and `theories/Emit.v`.
 
 == Preserving Guarantees
 
-The CLP extension does not weaken Hallmark's soundness properties.
-Each `Emittable` instance maps a Rocq proposition to a Prolog
-constraint that preserves its logical meaning:
+The CLP(FD) extension does not weaken Hallmark's soundness properties.
 
 - The Rocq side still type-checks the inductive definition, including
   the constraint-carrying premises.
-  All the properties proved about the rules (@sec-proofs) remain valid.
+  All properties proved about the rules (@sec-proofs) remain valid.
 
 - The Prolog side replaces what would be an unresolvable atom with a
-  CLP call that computes the same truth value — but more efficiently,
+  CLP(FD) call that computes the same truth value — more efficiently,
   using the constraint solver instead of enumeration.
 
-The key invariant is that the `emit` function must produce Prolog code
-whose satisfiability coincides with the truth of the Rocq proposition.
-This is a _semantic correctness_ obligation on the instance author.
-In the current design it is informal; a future direction is to state
-it as a formal theorem within Rocq, proving that each `Emittable`
-instance is faithful.
+The key invariant is that the emitted constraint must be
+_semantically faithful_ to the Rocq proposition: the constraint
+succeeds exactly when the proposition holds.
+For the five built-in operators this coincides with the standard
+CLP(FD) semantics for non-negative integers.
+This obligation is currently informal; a future direction is to
+state it as a Rocq theorem for each entry in the table.

@@ -8,9 +8,9 @@ Yet many real-world rule sets require negation —
 an access-control policy may deny access when a credential has been
 revoked, or grant access only when no conflict of interest exists.
 
-This section extends the Hallmark pipeline to handle negation,
-using decidability proofs from Rocq to certify that the translation
-is sound.
+This appendix first describes what the current implementation
+provides, then sketches the richer design that would be needed to
+handle negation soundly.
 
 == Negation-as-Failure in Prolog
 
@@ -33,9 +33,6 @@ incorrect answers: `\+ p(X)` fails if `p` has _any_ solution,
 even though the intended reading might be "there exists an `X`
 for which `p` does not hold."
 
-This distinction between safe and unsafe uses of negation is
-precisely where Rocq's type system can help.
-
 == Negation in Rocq
 
 In the Calculus of Inductive Constructions, negation is defined as:
@@ -52,59 +49,73 @@ This is _constructive_ negation: to refute `P`, one must show that
 Constructive negation is strictly weaker than classical negation —
 the law of excluded middle ($P or not P$) is not provable in
 general.
-For Hallmark, this is precisely the right stance:
-we can only emit `\+ goal` in Prolog when we _know_ that the goal
-either succeeds or finitely fails, never when its status is
-undetermined.
-
-The bridge between the two worlds is _decidability_.
-
-== The Bridge: Decidability Enables Safe Negation
-
-Recall from @sec-proofs the decidability lemma:
+The bridge between the two worlds is _decidability_:
 
 ```coq
-Lemma allowed_decidable :
-  forall u r, {allowed u r} + {~ allowed u r}.
+Class Decidable (P : Prop) :=
+  decide : {P} + {~ P}.
 ```
 
-The type `{P} + {~ P}` is a _decision procedure_: for every input,
-it terminates and returns either a proof of `P` or a proof of
-`~ P`.
-When such a proof exists, the corresponding Prolog predicate is
-guaranteed to either succeed or finitely fail on ground inputs —
-exactly the condition under which NAF is sound.
+A `Decidable` instance is a decision procedure: for every input it
+terminates and returns either a proof of `P` or a proof of `~P`.
+When such a proof exists for the negated goal, the corresponding
+Prolog evaluation is guaranteed to either succeed or finitely fail
+on ground inputs — exactly the condition under which NAF is sound.
 
-Hallmark leverages this through the `Emittable` typeclass
-introduced in @sec-clp.
-When a constructor's premise is a negation `~ P` and `P` carries
-a `Decidable` instance, the translator emits `\+ goal` in the
-generated Prolog:
+== Current Behaviour: Failure Diagnosis
 
-```coq
-Instance emit_neg (P : Prop) `{Decidable P} :
-    Emittable (~ P) := {
-  emit := "\\+ " ++ emit_goal P;
-}.
+The current implementation does not translate any `~P` constructor
+premise into a `\+` goal.
+A constructor containing a negation is treated as an ordinary
+anonymous binder and classified as `BExternal`, producing a plain
+Prolog atom that will simply fail at runtime unless a matching fact
+is provided externally.
+
+What the implementation _does_ provide is a failure-diagnosis
+subcommand.
+The `hallmark why-not` CLI command answers the question: _given
+that this query failed, why?_
+It builds a failure tree by enumerating every clause whose head
+matches the goal and recursively identifying the first body subgoal
+that failed:
+
+```prolog
+why_not(Goal, fail_node(Goal, Reason)) :-
+    findall(rule_attempt(Rule, Rest),
+            (clause(Goal, Body), body_rule(Body, Rule, Rest)),
+            Attempts),
+    (   Attempts == []
+    ->  Reason = no_clause
+    ;   maplist(try_rule_not, Attempts, Results),
+        Reason = all_rules_failed(Results)
+    ).
 ```
 
-Without a decidability proof, the translator refuses to emit
-negation — a compile-time guarantee that every `\+` in the
-generated program is safe.
+The result is a labelled tree that identifies, for each failing
+rule, the first subgoal responsible.
+This is a diagnostic tool for query debugging, not a mechanism for
+compiling negation from Rocq.
 
-== Running Example: Revocable Access
+== The Desired Design
 
-Let us extend the `allowed` policy with a revocation mechanism.
-A user's access is granted only when it has not been revoked:
+A sound negation extension would connect the Rocq and Prolog sides
+through `Decidable` instances.
+The desired design has three components.
+
+=== Detecting Negated Premises
+
+During Stage 2, when the translator encounters an anonymous binder
+of type `~P`, it would check whether `P` carries a `Decidable`
+instance.
+If so, the binder is classified as a negated premise and emitted as
+`\+ p(args)` in the clause body.
+If no `Decidable` instance exists, the translator rejects the
+definition with a compile-time error, preventing an unsound `\+`
+from being emitted silently.
+
+For example, the constructor:
 
 ```coq
-Inductive revoked : user -> resource -> Prop :=
-  | revoke : forall u r, blacklist u r -> revoked u r.
-
-Instance revoked_decidable :
-  forall u r, Decidable (revoked u r).
-(* proof omitted — follows from the finiteness of the blacklist *)
-
 Inductive safe_allowed : user -> resource -> Prop :=
   | safe_grant : forall u r,
       allowed u r ->
@@ -112,27 +123,24 @@ Inductive safe_allowed : user -> resource -> Prop :=
       safe_allowed u r.
 ```
 
-The constructor `safe_grant` requires both a positive derivation
-(`allowed u r`) and a negative one (`~ revoked u r`).
-Because `revoked` is decidable, Hallmark emits:
+would generate:
 
 ```prolog
 safe_allowed(U, R) :-
-    allowed(U, R),
-    \+ revoked(U, R).
+    rule(safe_grant), allowed(U, R), \+ revoked(U, R).
 ```
 
-The Prolog engine checks access first, then verifies that no
-revocation exists — precisely the intended semantics.
+provided that `revoked` carries a `Decidable` instance.
+Without one, the translation would fail at the Rocq elaboration
+step.
 
-== Stratification
+=== Stratification Check
 
-Negation introduces a subtlety: if predicate `p` depends
+Negation introduces a second concern: if predicate `p` depends
 negatively on `q` and `q` depends negatively on `p`, the program
 has no well-defined meaning.
 The standard remedy is _stratification_ — organizing predicates
-into layers (strata) such that negation only crosses layers
-_downward_.
+into layers such that negation only crosses layers downward.
 
 Formally, a program is stratified if there exists an assignment
 of levels to predicates such that:
@@ -144,35 +152,22 @@ of levels to predicates such that:
 
 Stratified programs have a unique _perfect model_ — the semantics
 is unambiguous.
-
-In Hallmark, the translator builds a dependency graph over the
-compiled predicates, with edges labeled _positive_ or _negative_.
-If the graph contains a cycle that passes through a negative edge,
-the translation is rejected with an error.
+After emitting clauses, the desired translator would build a
+dependency graph and reject any program whose graph contains a
+cycle passing through a negative edge.
 Rocq's strict positivity condition already prevents an inductive
-type from negating _itself_ in its own definition, so
-stratification violations can only arise when multiple inductives
-are composed.
-The compile-time check catches exactly those cases.
+type from negating itself, so violations can only arise when
+composing multiple inductives; the check would catch exactly those
+cases.
 
-== Preserving Guarantees
+=== Preserving Guarantees
 
-The negation extension preserves Hallmark's soundness properties:
-
-- Every `\+` in the generated program corresponds to a `~ P`
-  premise that is backed by a decidability proof.
-  The Prolog evaluation faithfully mirrors the Rocq semantics:
-  the goal succeeds or fails, with no undetermined case.
-
-- Stratification ensures that the generated program has a unique
-  stable model, preventing circular reasoning through negation.
-
-- All the positive properties proved about the underlying
-  predicates (@sec-proofs) remain valid.
-  The negation layer adds new predicates; it does not alter the
-  existing ones.
-
-For programs that go beyond stratification — predicates with
-mutually negative dependencies that do not form a strict
-hierarchy — @sec-tabling introduces tabling as a mechanism
-to recover well-defined semantics.
+Under this design, every `\+` in the generated program would
+correspond to a `~P` premise backed by a `Decidable` proof.
+The Prolog evaluation would faithfully mirror the Rocq semantics:
+the goal succeeds or finitely fails, with no undetermined case.
+Stratification would ensure a unique stable model, preventing
+circular reasoning through negation.
+All positive properties proved about the underlying predicates
+(@sec-proofs) would remain valid, since the negation layer adds
+new predicates without modifying the existing ones.

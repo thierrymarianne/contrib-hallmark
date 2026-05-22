@@ -17,9 +17,12 @@ The first clause calls `path` before any base case can be reached.
 Under standard SLD resolution, the engine re-enters the same goal
 indefinitely, never progressing to the second clause.
 
-This section introduces _tabling_, a mechanism available in
+This appendix introduces _tabling_, a mechanism available in
 SWI-Prolog that eliminates this class of divergence and connects
 directly to the bounded-depth proofs from @sec-proofs.
+Tabling is not currently emitted by Hallmark; the material below
+describes what a tabling extension could look like and why it would
+be a natural fit for the system.
 
 == SLG Resolution and Memoization
 
@@ -78,15 +81,15 @@ When the subgoal set is finite, tabling _guarantees_ termination:
 every variant is tabled at most once, and the fixed-point
 computation must converge.
 
-Hallmark can exploit this directly.
+A tabling extension could exploit this directly.
 When a bounded-depth proof exists for an inductive predicate,
-the translator automatically emits a tabling directive:
+the translator could automatically emit a tabling directive:
 
 ```prolog
 :- table allowed/2.
 ```
 
-The Rocq proof becomes a _justification_ for the Prolog-level
+The Rocq proof would become a _justification_ for the Prolog-level
 optimization: the bounded-depth theorem certifies that tabling
 will terminate, and the directive makes Prolog enforce it.
 

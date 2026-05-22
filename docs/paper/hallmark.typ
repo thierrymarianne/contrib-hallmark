@@ -36,5 +36,6 @@
 #include "sections/appendix-e-composing-rule-sets.typ"
 #include "sections/appendix-f-negation.typ"
 #include "sections/appendix-g-tabling.typ"
+#include "sections/appendix-h-fixpoints.typ"
 
 #bibliography("assets/refs.bib", title: "References", style: "ieee")
