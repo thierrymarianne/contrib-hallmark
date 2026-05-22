@@ -19,10 +19,14 @@ Inductive prolog_term :=
 
 (** A Horn clause [head :- body]. Empty body means a fact.
     [cl_witness_args] carries the Rocq constructor's argument template:
-    data variables as [PVar i] and proof slots as [PApp "pf" [PAtom n]]. *)
+    data variables as [PVar i] and proof slots as [PApp "pf" [PAtom n]].
+    [cl_npremises]: [None] for inductive clauses (use [ctor_witness]),
+    [Some n] for Fixpoint clauses where the first [n] body goals are
+    implication premises (become [fun] binders in the proof term). *)
 Record clause := {
   cl_name : ident;
   cl_head : prolog_term;
   cl_body : list prolog_term;
   cl_witness_args : list prolog_term;
+  cl_npremises : option nat;
 }.

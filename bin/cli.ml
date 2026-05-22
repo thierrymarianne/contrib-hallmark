@@ -12,15 +12,14 @@ let output =
 
 let compile_run module_name output =
   let rocq_flags = Loadpath.discover module_name in
-  Compile.on_output := (fun prolog ->
-    match output with
-    | None -> print_string prolog
-    | Some path ->
-      let oc = open_out path in
-      output_string oc prolog;
-      close_out oc;
-      Printf.eprintf "Wrote %s\n" path);
-  Compile.run ~rocq_flags ~module_name
+  let prolog = Rocq.compile ~rocq_flags ~module_name in
+  match output with
+  | None -> print_string prolog
+  | Some path ->
+    let oc = open_out path in
+    output_string oc prolog;
+    close_out oc;
+    Printf.eprintf "Wrote %s\n" path
 
 let compile_cmd =
   let doc = "Compile a Rocq module to a Prolog program." in
@@ -42,15 +41,34 @@ let prove =
   let doc = "Reconstruct a Rocq proof term and type-check it." in
   Arg.(value & flag & info [ "prove" ] ~doc)
 
-let why_run module_name query prove =
+let database =
+  let doc = "Pre-compiled Prolog database file. Skips Rocq compilation when provided." in
+  Arg.(value & opt (some string) None & info [ "database" ] ~docv:"FILE" ~doc)
+
+let facts =
+  let doc = "Extra Prolog file with dynamic facts (e.g. assertz directives)." in
+  Arg.(value & opt (some string) None & info [ "facts" ] ~docv:"FILE" ~doc)
+
+let why_run module_name query prove database facts =
   let rocq_flags = Loadpath.discover module_name in
-  Why.run ~rocq_flags ~module_name ~query ~prove
+  Why.run ~rocq_flags ~module_name ~query ~prove ~database ~facts
 
 let why_cmd =
   let doc = "Compile and explain a Prolog query with a proof tree." in
   let info = Cmd.info "why" ~doc in
   Cmd.v info
-    Term.(const why_run $ why_module_name $ query $ prove)
+    Term.(const why_run $ why_module_name $ query $ prove $ database $ facts)
+
+(* -- why-not subcommand --------------------------------------------------- *)
+
+let why_not_run module_name query database facts =
+  Why.run_not ~module_name ~query ~database ~facts
+
+let why_not_cmd =
+  let doc = "Explain why a Prolog query fails." in
+  let info = Cmd.info "why-not" ~doc in
+  Cmd.v info
+    Term.(const why_not_run $ why_module_name $ query $ database $ facts)
 
 (* -- loadpath subcommand ------------------------------------------------- *)
 
@@ -79,4 +97,4 @@ let loadpath_cmd =
 let cmd =
   let doc = "Translate Rocq inductive types to Prolog programs." in
   let info = Cmd.info "hallmark" ~version:"0.1.0" ~doc in
-  Cmd.group info [ compile_cmd; why_cmd; loadpath_cmd ]
+  Cmd.group info [ compile_cmd; why_cmd; why_not_cmd; loadpath_cmd ]

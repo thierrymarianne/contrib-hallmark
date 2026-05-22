@@ -75,7 +75,7 @@ Definition print_clause (c : clause) : string :=
   let head := pt (cl_head c) in
   let rule_tag := pt (PApp "rule" [PAtom (cl_name c)]) in
   match cl_body c with
-  | [] => head ++ " :- " ++ rule_tag ++ "."
+  | [] => head ++ "."
   | body =>
     head ++ " :- " ++ rule_tag ++ ", " ++
     String.concat ", " (map pt body) ++ "."
@@ -126,20 +126,59 @@ Definition is_constraint (t : prolog_term) : bool :=
 Definition has_clpfd (clauses : list clause) : bool :=
   existsb (fun c => existsb is_constraint (cl_body c)) clauses.
 
+(** Render a trusted-predicate declaration as a [:- dynamic] directive
+    plus a [trusted_pred/1] marker for the witness system. *)
+Definition print_trusted_decl (decl : ident * nat) : string :=
+  let '(name, arity) := decl in
+  ":- dynamic " ++ name ++ "/" ++ string_of_nat arity ++ "." ++ nl ++
+  "trusted_pred(" ++ name ++ ").".
+
+(** Render a [fix_witness/4] fact for Fixpoint proof-witness reconstruction.
+
+    Emits: [fix_witness(Name, Head, [Body...], NPremises).]
+    where [NPremises] is the count of premise body goals that become
+    [fun] binders in the Rocq proof term. *)
+Definition print_fix_witness (c : clause) (n : nat) : string :=
+  let all_vars := List.app (collect_vars (cl_head c))
+                           (flat_map collect_vars (cl_body c)) in
+  let pt := print_term_ctx all_vars in
+  let head := pt (cl_head c) in
+  let body_strs := map pt (cl_body c) in
+  "fix_witness(" ++ cl_name c ++ ", " ++
+    head ++ ", " ++
+    "[" ++ String.concat ", " body_strs ++ "], " ++
+    string_of_nat n ++ ").".
+
+(** Emit the appropriate witness fact for a clause:
+    [ctor_witness] for inductive clauses, [fix_witness] for Fixpoint clauses. *)
+Definition print_witness (c : clause) : string :=
+  match cl_npremises c with
+  | None => print_ctor_witness c
+  | Some n => print_fix_witness c n
+  end.
+
 (** Assemble a complete Prolog program.
 
     The [rule(_).] fact at the top ensures that [rule(Name)] — inserted
     as the first body atom of every clause by [print_clause] — always
-    succeeds.  The [ctor_witness/4] facts enable proof-witness
-    reconstruction: mapping resolution traces back to Rocq proof terms.
-    When CLP(FD) constraints are present, [:- use_module(library(clpfd)).]
-    is prepended. *)
-Definition print_program (clauses : list clause) : string :=
+    succeeds.  Witness facts enable proof-witness reconstruction:
+    [ctor_witness/4] for inductive clauses, [fix_witness/4] for Fixpoint
+    clauses.  When CLP(FD) constraints are present,
+    [:- use_module(library(clpfd)).] is prepended.
+    Trusted predicates are emitted as [:- dynamic] directives. *)
+Definition print_program (trusted : list (ident * nat))
+  (clauses : list clause) : string :=
   let clp_header :=
     if has_clpfd clauses
     then ":- use_module(library(clpfd))." ++ nl
     else "" in
+  let trusted_header :=
+    match trusted with
+    | [] => ""
+    | _ => String.concat nl (map print_trusted_decl trusted) ++ nl
+    end in
   clp_header ++
+  trusted_header ++
   "rule(_)." ++ nl ++
   String.concat nl (map print_clause clauses) ++ nl ++
-  String.concat nl (map print_ctor_witness clauses) ++ nl.
+  String.concat nl (map print_witness clauses) ++ nl.

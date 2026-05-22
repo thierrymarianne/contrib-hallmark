@@ -77,9 +77,11 @@ Definition extract_conclusion (Σ : global_env) (ind_kn : kername)
 
 (** Collect clause body atoms from classified bindings.
     Each binding at index [i] has its args at depth [i].
+    [offset] shifts the starting depth (0 for constructor telescopes,
+    [N+K] for Fixpoint branches where N=lambda args, K=pattern vars).
     [BConstraint] bindings become [PConstraint op lhs rhs]. *)
-Definition extract_body (Σ : global_env) (ind_kn : kername)
-  (classes : list binding_class) : list prolog_term :=
+Definition extract_body_at (Σ : global_env) (ind_kn : kername)
+  (offset : nat) (classes : list binding_class) : list prolog_term :=
   let fix go (i : nat) (cs : list binding_class) : list prolog_term :=
     match cs with
     | [] => []
@@ -98,7 +100,11 @@ Definition extract_body (Σ : global_env) (ind_kn : kername)
        | BIndex | BErased => []
        end) ++ go (S i) rest
     end
-  in go 0 classes.
+  in go offset classes.
+
+Definition extract_body (Σ : global_env) (ind_kn : kername)
+  (classes : list binding_class) : list prolog_term :=
+  extract_body_at Σ ind_kn 0 classes.
 
 (** Build the Rocq constructor argument template from classified bindings.
     [BIndex] at position [i] becomes [PVar i] (a data variable).
@@ -142,7 +148,7 @@ Definition translate_constructor (tbl : clp_table) (Σ : global_env)
     let body := extract_body Σ ind_kn classes in
     let wargs := build_witness_args classes in
     Some {| cl_name := name; cl_head := head'; cl_body := body;
-            cl_witness_args := wargs |}
+            cl_witness_args := wargs; cl_npremises := None |}
   | None => None
   end.
 

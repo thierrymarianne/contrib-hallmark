@@ -8,10 +8,14 @@
 %%   proof(Goal, by(Rule, []))                 — rule-tagged axiom
 %%   proof(Goal, by(Rule, [Sub1, ...]))        — rule with sub-proofs
 
+:- meta_predicate clpfd_check(0).
+clpfd_check(C) :- call(C).
+
 why(clpfd_check(C), proof(clpfd_check(C), by(constraint, []))) :-
     call(C), !.
-why(Goal, proof(Goal, by(fact, []))) :-
-    clause(Goal, true), !.
+why(Goal, proof(Goal, by(Rule, []))) :-
+    clause(Goal, true), !,
+    (ctor_witness(Rule, Goal, [], _) -> true ; Rule = fact).
 why(Goal, proof(Goal, by(Rule, SubProofs))) :-
     clause(Goal, Body),
     body_rule(Body, Rule, Rest),
@@ -54,11 +58,28 @@ why_body(G, [P]) :-
 %%   ?- why(allowed(eve, secret_report), P), witness(P, T).
 %%   ?- why(Goal, P), witness(P, T), print_rocq(T).
 
+witness(proof(Goal, by(fact, [])), app('I', [])) :-
+    Goal =.. [Pred | _],
+    trusted_pred(Pred), !.
 witness(proof(Goal, by(fact, [])), axiom(Goal)).
 witness(proof(Goal, by(Rule, SubProofs)), Term) :-
     ctor_witness(Rule, Goal, BodyAtoms, Template),
     unify_body(SubProofs, BodyAtoms),
     fill_template(Template, SubProofs, Term).
+witness(proof(Goal, by(Rule, SubProofs)), Term) :-
+    fix_witness(Rule, Goal, BodyAtoms, NPrem),
+    unify_body(SubProofs, BodyAtoms),
+    length(PremProofs, NPrem),
+    append(PremProofs, ConcProofs, SubProofs),
+    witness_conc(ConcProofs, ConcWitness),
+    wrap_funs(PremProofs, ConcWitness, Term).
+
+witness_conc([], app('I', [])).
+witness_conc([P], W) :- witness(P, W).
+
+wrap_funs([], Body, Body).
+wrap_funs([proof(G, _) | Rest], Body, fun_term(G, Wrapped)) :-
+    wrap_funs(Rest, Body, Wrapped).
 
 unify_body([], []).
 unify_body([proof(G, _) | Ps], [G | Bs]) :-
@@ -82,6 +103,10 @@ print_rocq(Term) :-
     rocq_string(Term, S),
     write(S), nl.
 
+rocq_string(fun_term(Type, Body), S) :-
+    rocq_goal_string(Type, TypeS),
+    rocq_string(Body, BodyS),
+    format(atom(S), "(fun _ : ~w => ~w)", [TypeS, BodyS]).
 rocq_string(axiom(Goal), S) :-
     goal_axiom_name(Goal, S).
 rocq_string(app(Name, []), S) :-
@@ -114,7 +139,12 @@ rocq_goal_string(Goal, S) :-
     atomic_list_concat([Pred | ArgStrs], ' ', S).
 
 rocq_atom_string(A, S) :- atom(A), !, atom_string(A, S).
-rocq_atom_string(T, S) :- term_to_atom(T, S).
+rocq_atom_string(N, S) :- number(N), !, number_string(N, S).
+rocq_atom_string(T, S) :-
+    T =.. [F | Args], Args \= [],
+    maplist(rocq_atom_string, Args, ArgStrs),
+    atomic_list_concat([F | ArgStrs], ' ', Inner),
+    format(atom(S), "(~w)", [Inner]).
 
 %% write_check/3 — write a Rocq Check statement to a file.
 %%
@@ -140,6 +170,7 @@ c_cyan("\e[36m").
 c_green("\e[32m").
 c_yellow("\e[33m").
 c_white("\e[97m").
+c_magenta("\e[35m").
 
 %% Guides is a list of atoms: 'pipe' or 'space', one per ancestor level.
 %% 'pipe' means the ancestor has more siblings -> draw │
@@ -172,9 +203,17 @@ explain_(proof(clpfd_check(C), by(constraint, _)), Guides, IsLast) :-
            [W, Pretty, R, D, R, B, Cy, R]),
     write(S).
 explain_(proof(Goal, by(fact, _)), Guides, IsLast) :-
+    Goal =.. [Pred | _],
+    trusted_pred(Pred), !,
+    print_prefix(Guides, IsLast),
+    c_white(W), c_dim(D), c_magenta(M), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w~w ~w\x2190\~w ~w~wdynamic~w~n",
+           [W, Goal, R, D, R, B, M, R]),
+    write(S).
+explain_(proof(Goal, by(fact, _)), Guides, IsLast) :-
     print_prefix(Guides, IsLast),
     c_white(W), c_dim(D), c_green(G), c_bold(B), c_reset(R),
-    format(atom(S), "~w~w~w ~w←~w ~w~wfact~w~n",
+    format(atom(S), "~w~w~w ~w\x2190\~w ~w~wfact~w~n",
            [W, Goal, R, D, R, B, G, R]),
     write(S).
 explain_(proof(Goal, by(_, [])), Guides, IsLast) :-
@@ -224,3 +263,165 @@ print_guide_columns([G|Gs]) :-
     ;   write("    ")
     ),
     print_guide_columns(Gs).
+
+%% why_not/2 — failure-explanation meta-interpreter.
+%%
+%% Produces a failure tree explaining why a goal cannot be proved.
+%%
+%% Failure trees:
+%%   fail_node(Goal, Reason)
+%%
+%%   no_clause                        — no clause head matches
+%%   constraint_failed(C)             — CLP(FD) constraint unsatisfied
+%%   all_rules_failed([Attempt, ...]) — every matching rule failed
+%%
+%%   rule_attempt(Rule, [Step, ...])  — one rule tried
+%%
+%%   ok(Goal)        — premise succeeded
+%%   fail(FailNode)  — premise failed (recursive)
+%%
+%% Usage:
+%%   ?- why_not(can_hunt(luna, phoenix, volcano), E), explain_not(E).
+
+why_not(Goal, fail_node(Goal, constraint_failed(C))) :-
+    Goal = clpfd_check(C), !.
+why_not(Goal, fail_node(Goal, Reason)) :-
+    findall(rule_attempt(Rule, Rest),
+            (clause(Goal, Body), body_rule(Body, Rule, Rest)),
+            Attempts),
+    (   Attempts == []
+    ->  Reason = no_clause
+    ;   maplist(try_rule_not, Attempts, Results),
+        Reason = all_rules_failed(Results)
+    ).
+
+try_rule_not(rule_attempt(Rule, Body), rule_attempt(Rule, Steps)) :-
+    try_body(Body, Steps).
+
+try_body(true, []) :- !.
+try_body((G, Rest), [Step|Steps]) :-
+    !,
+    (   try_goal(G)
+    ->  Step = ok(G),
+        try_body(Rest, Steps)
+    ;   why_not(G, FailNode),
+        Step = fail(FailNode),
+        Steps = []
+    ).
+try_body(G, [Step]) :-
+    G \= true, G \= (_, _),
+    (   try_goal(G)
+    ->  Step = ok(G)
+    ;   why_not(G, FailNode),
+        Step = fail(FailNode)
+    ).
+
+try_goal(clpfd_check(C)) :- !, call(C).
+try_goal(G) :- call(G).
+
+%% run_why_not/1 — top-level entry point for the CLI.
+
+run_why_not(Goal) :-
+    (   call(Goal)
+    ->  c_green(G), c_bold(B), c_reset(R),
+        format("~w~w\x2713\~w Goal succeeds. Use 'why' to see the proof tree.~n",
+               [B, G, R])
+    ;   why_not(Goal, Expl),
+        explain_not(Expl)
+    ).
+
+%% explain_not/1 — pretty-print a failure tree with ANSI colors and tree guides.
+%%
+%% Reuses the same visual style as explain/1: tree guides, dim arrows,
+%% bold+colored labels. Adds red ✗ for failures and green ✓ for successes.
+
+c_red("\e[31m").
+
+explain_not(FailNode) :-
+    explain_not_(FailNode, root, true).
+
+%% Leaf: no matching clause
+explain_not_(fail_node(Goal, no_clause), Guides, IsLast) :-
+    !,
+    print_prefix(Guides, IsLast),
+    c_red(Red), c_white(W), c_dim(D), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2717\~w ~w~w~w ~w\x2190\~w ~w~wno clause~w~n",
+           [B, Red, R, W, Goal, R, D, R, B, Red, R]),
+    write(S).
+
+%% Leaf: constraint failed
+explain_not_(fail_node(clpfd_check(C), constraint_failed(C)), Guides, IsLast) :-
+    !,
+    print_prefix(Guides, IsLast),
+    format_constraint(C, Pretty),
+    c_red(Red), c_white(W), c_dim(D), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2717\~w ~w~w~w ~w\x2190\~w ~w~wunsatisfied~w~n",
+           [B, Red, R, W, Pretty, R, D, R, B, Red, R]),
+    write(S).
+
+%% Node: all rules failed — print the goal, then each rule attempt as children
+explain_not_(fail_node(Goal, all_rules_failed(Attempts)), Guides, IsLast) :-
+    print_prefix(Guides, IsLast),
+    c_red(Red), c_white(W), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2717\~w ~w~w~w~w~n",
+           [B, Red, R, B, W, Goal, R]),
+    write(S),
+    child_guides(Guides, IsLast, ChildGuides),
+    explain_not_list(Attempts, ChildGuides).
+
+explain_not_list([], _).
+explain_not_list([A], Guides) :-
+    !, explain_not_attempt(A, Guides, true).
+explain_not_list([A|As], Guides) :-
+    explain_not_attempt(A, Guides, false),
+    explain_not_list(As, Guides).
+
+%% Print one rule attempt: rule name header, then premise steps
+explain_not_attempt(rule_attempt(Rule, Steps), Guides, IsLast) :-
+    print_prefix(Guides, IsLast),
+    c_red(Red), c_yellow(Y), c_dim(D), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2717\~w ~w\x2190\~w ~w~w~w~w~n",
+           [B, Red, R, D, R, B, Y, Rule, R]),
+    write(S),
+    child_guides(Guides, IsLast, ChildGuides),
+    explain_not_steps(Steps, ChildGuides).
+
+explain_not_steps([], _).
+explain_not_steps([S], Guides) :-
+    !, explain_not_step(S, Guides, true).
+explain_not_steps([S|Ss], Guides) :-
+    explain_not_step(S, Guides, false),
+    explain_not_steps(Ss, Guides).
+
+%% Succeeded premise: ✓ with same labels as explain
+explain_not_step(ok(clpfd_check(C)), Guides, IsLast) :-
+    !,
+    print_prefix(Guides, IsLast),
+    format_constraint(C, Pretty),
+    c_green(G), c_white(W), c_dim(D), c_cyan(Cy), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2713\~w ~w~w~w ~w\x2190\~w ~w~wconstraint~w~n",
+           [B, G, R, W, Pretty, R, D, R, B, Cy, R]),
+    write(S).
+explain_not_step(ok(Goal), Guides, IsLast) :-
+    Goal =.. [Pred | _],
+    trusted_pred(Pred), !,
+    print_prefix(Guides, IsLast),
+    c_green(G), c_white(W), c_dim(D), c_magenta(M), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2713\~w ~w~w~w ~w\x2190\~w ~w~wdynamic~w~n",
+           [B, G, R, W, Goal, R, D, R, B, M, R]),
+    write(S).
+explain_not_step(ok(Goal), Guides, IsLast) :-
+    !,
+    print_prefix(Guides, IsLast),
+    c_green(G), c_white(W), c_dim(D), c_bold(B), c_reset(R),
+    format(atom(S), "~w~w\x2713\~w ~w~w~w ~w\x2190\~w ~w~wfact~w~n",
+           [B, G, R, W, Goal, R, D, R, B, G, R]),
+    write(S).
+
+%% Failed premise: recurse into the fail_node
+explain_not_step(fail(FailNode), Guides, IsLast) :-
+    explain_not_(FailNode, Guides, IsLast).
+
+child_guides(root, _, []) :- !.
+child_guides(Guides, true, [space|Guides]) :- !.
+child_guides(Guides, _, [pipe|Guides]).

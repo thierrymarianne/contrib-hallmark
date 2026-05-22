@@ -23,7 +23,8 @@ Definition admin_all_clause :=
   {| cl_name := "admin_all";
      cl_head := PApp "allowed" [PAtom "admin"; PVar 0];
      cl_body := [];
-     cl_witness_args := [PVar 0] |}.
+     cl_witness_args := [PVar 0];
+     cl_npremises := None |}.
 
 Definition delegate_clause :=
   {| cl_name := "delegate";
@@ -32,11 +33,12 @@ Definition delegate_clause :=
                  PApp "allowed" [PVar 1; PVar 2]];
      cl_witness_args := [PVar 0; PVar 1; PVar 2;
                          PApp "pf" [PAtom "0"];
-                         PApp "pf" [PAtom "1"]] |}.
+                         PApp "pf" [PAtom "1"]];
+     cl_npremises := None |}.
 
 Example print_admin_rule :
   print_clause admin_all_clause =
-  "allowed(admin, _) :- rule(admin_all)."
+  "allowed(admin, _)."
 := eq_refl.
 
 Example print_delegate_clause :
@@ -45,9 +47,9 @@ Example print_delegate_clause :
 := eq_refl.
 
 Example program_starts_with_rule :
-  is_prefix "rule(_)." (print_program [admin_all_clause]) = true
+  is_prefix "rule(_)." (print_program [] [admin_all_clause]) = true
 := eq_refl.
 
 Example program_has_clause :
-  is_substring "admin_all" (print_program [admin_all_clause]) = true
+  is_substring "admin_all" (print_program [] [admin_all_clause]) = true
 := eq_refl.

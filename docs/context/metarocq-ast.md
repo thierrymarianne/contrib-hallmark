@@ -57,6 +57,71 @@ Inductive term : Type :=
 
 Key: **`tProd na ty body`** is `forall (na : ty), body` — the telescope we must parse.
 
+## Fixpoint & Case AST Nodes
+
+### def (Common/BasicAst.v)
+
+```coq
+Record def (term : Type) := mkdef {
+  dname : aname;   (* name, annotated with relevance *)
+  dtype : term;    (* type of the fixpoint function *)
+  dbody : term;    (* body (a lambda term); may mention other mutually-defined names *)
+  rarg  : nat      (* index of the structurally decreasing argument *)
+}.
+
+Definition mfixpoint term := list (def term).
+```
+
+`tFix [def1; def2; ...] idx` — `idx` selects which function in the mutual block.
+Inside `def.dbody`, `tRel 0` refers to the last fixpoint in the block (the fixpoint itself for non-mutual).
+
+### case_info (Common/BasicAst.v)
+
+```coq
+Record case_info := mk_case_info {
+  ci_ind       : inductive;   (* the inductive being matched *)
+  ci_npar      : nat;         (* number of parameters *)
+  ci_relevance : relevance;
+}.
+```
+
+### predicate (Template/Ast.v)
+
+```coq
+Record predicate (term : Type) := mk_predicate {
+  puinst   : Instance.t;   (* universe instance *)
+  pparams  : list term;    (* parameter values *)
+  pcontext : list aname;   (* binder names for indices + inductive app;
+                               first entry is the "self" binder *)
+  preturn  : term;          (* return type *)
+}.
+```
+
+### branch (Template/Ast.v)
+
+```coq
+Record branch (term : Type) := mk_branch {
+  bcontext : list aname;   (* binder names introduced by the constructor pattern,
+                               in context order — tRel 0 = last entry *)
+  bbody    : term;          (* branch body *)
+}.
+```
+
+`bcontext` length = number of constructor arguments (excluding parameters).
+Inside `bbody`, `tRel 0` refers to the last binder in `bcontext`.
+
+### tCase structure summary
+
+```
+tCase ci pred discr [branch1; branch2; ...]
+```
+
+- `ci.ci_ind` identifies the inductive being matched
+- `discr` is the scrutinee (the term being matched)
+- Each branch corresponds to one constructor (in declaration order)
+- `branch.bcontext` introduces the constructor argument binders
+- `branch.bbody` is the branch body under those binders
+
 ## Environment Records (Common/Environment.v)
 
 ### constructor_body
@@ -118,6 +183,17 @@ Definition lookup_env (Σ : global_env) (kn : kername) : option global_decl :=
   lookup_global Σ.(declarations) kn.
 ```
 
+### constant_body
+
+```coq
+Record constant_body := {
+  cst_type : term;
+  cst_body : option term;    (* None for axioms, Some for definitions *)
+  cst_universes : universes_decl;
+  cst_relevance : relevance;
+}.
+```
+
 ### program (Template/Ast.v)
 
 ```coq
@@ -141,6 +217,8 @@ tmQuoteRec {A} (a : A) : TemplateMonad program
   (* = tmQuoteRecTransp a true — quotes all dependencies *)
 tmQuoteInductive : kername -> TemplateMonad mutual_inductive_body
   (* Quotes a single inductive by kername — no global_env needed *)
+tmQuoteConstant : kername -> bool (* bypass opacity? *) -> TemplateMonad constant_body
+  (* Quotes a constant (definition, lemma, axiom) by kername *)
 tmQuoteModule : qualid -> TemplateMonad (list global_reference)
   (* Returns all declarations in a module as global_reference entries *)
 

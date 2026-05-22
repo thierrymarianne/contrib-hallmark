@@ -9,4 +9,4 @@
 
 (executable
  (name hallmark)
- (libraries rocq-runtime.toplevel cmdliner unix sexplib))
+ (libraries cmdliner unix sexplib))
