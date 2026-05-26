@@ -3,4 +3,4 @@
  (extracted_modules hallmark)
  (theories Stdlib Ltac2 Equations
            MetaRocq.Utils MetaRocq.Common MetaRocq.Template
-           Hallmark))
+           ExtLib Hallmark))
