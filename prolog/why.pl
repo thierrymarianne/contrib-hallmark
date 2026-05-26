@@ -11,6 +11,15 @@
 :- meta_predicate clpfd_check(0).
 clpfd_check(C) :- call(C).
 
+%% trusted_pred/1 is normally emitted by hallmark for each trusted
+%% predicate in the engine. For theories with no trusted predicates
+%% (e.g. enum-only signature tables), the directive is absent and
+%% the bare call below would raise existence_error. Declare it
+%% multifile + discontiguous so an empty fact-set behaves like
+%% "no trusted predicates" rather than an error.
+:- multifile trusted_pred/1.
+:- discontiguous trusted_pred/1.
+
 why(clpfd_check(C), proof(clpfd_check(C), by(constraint, []))) :-
     call(C), !.
 %% Trusted predicates: emit a fact-leaf if the goal succeeds, regardless
