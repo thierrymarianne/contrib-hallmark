@@ -52,6 +52,89 @@ Fixpoint quote_all (kns : list kername)
         tmReturn ((kn, InductiveDecl mib) :: acc)))
   end.
 
+(** Collect inductive kernames referenced anywhere in a term.
+
+    Used to compute the transitive closure of inductives that need to
+    be quoted into the global environment so that
+    [lookup_constructor_name] can resolve enum constructors used in
+    constructor premises. Without this, references to e.g.
+    [ch_succeeded] from [chain_ok]'s premise render as [?] when
+    [charge_state] is declared in a different module than the target.
+
+    [fuel] bounds the recursion depth — 1000 is generous given that
+    constructor types are usually small. *)
+Fixpoint collect_kn_refs (fuel : nat) (t : term) : list kername :=
+  match fuel with
+  | 0 => []
+  | S fuel' =>
+    match t with
+    | tInd (mkInd kn _) _ => [kn]
+    | tConstruct (mkInd kn _) _ _ => [kn]
+    | tApp f args =>
+      List.app
+        (collect_kn_refs fuel' f)
+        (flat_map (collect_kn_refs fuel') args)
+    | tProd _ ty body =>
+      List.app (collect_kn_refs fuel' ty) (collect_kn_refs fuel' body)
+    | tLambda _ ty body =>
+      List.app (collect_kn_refs fuel' ty) (collect_kn_refs fuel' body)
+    | tLetIn _ a b body =>
+      List.app (collect_kn_refs fuel' a)
+        (List.app (collect_kn_refs fuel' b) (collect_kn_refs fuel' body))
+    | tCase _ _ scrut branches =>
+      List.app
+        (collect_kn_refs fuel' scrut)
+        (flat_map (fun b => collect_kn_refs fuel' (bbody b)) branches)
+    | _ => []
+    end
+  end.
+
+(** Collect inductive kernames referenced in all constructor types of a
+    mutual_inductive_body, plus any indices used in the inductive's
+    return type. *)
+Definition mib_kn_refs (mib : mutual_inductive_body) : list kername :=
+  flat_map (fun oib =>
+    flat_map (fun cb => collect_kn_refs 1000 (cstr_type cb))
+             (ind_ctors oib))
+    (ind_bodies mib).
+
+(** Transitive closure: starting from a seed list of inductive
+    kernames, repeatedly quote and scan each one's constructor types
+    for additional inductive references, quoting those too, until no
+    new kernames appear.
+
+    Returns the full [global_declarations] list (deduplicated).
+
+    [fuel] bounds the total number of iterations — set generously
+    because each iteration adds at least one new kername.
+
+    This closes §2 of the hallmark upstream requirements (the
+    single-module quote scope issue): user theories can split
+    inductives across multiple .v files, and hallmark will quote the
+    transitive closure starting from the inductives declared in the
+    target module. *)
+Fixpoint close_kns (fuel : nat) (seen : list kername) (todo : list kername)
+  : TemplateMonad global_declarations :=
+  match fuel with
+  | 0 => tmReturn []
+  | S fuel' =>
+    match todo with
+    | [] => tmReturn []
+    | kn :: rest =>
+      if existsb (fun s => kn == s) seen
+      then close_kns fuel' seen rest
+      else
+        tmBind (tmQuoteInductive kn) (fun mib =>
+          let new_refs := mib_kn_refs mib in
+          let new_unseen := List.filter
+            (fun k => negb (existsb (fun s => k == s) (kn :: seen)))
+            new_refs in
+          tmBind (close_kns fuel' (kn :: seen)
+                    (List.app new_unseen rest)) (fun rest_decls =>
+            tmReturn ((kn, InductiveDecl mib) :: rest_decls)))
+    end
+  end.
+
 (** Monadic loop: quote each constant kername. *)
 Fixpoint quote_constants (kns : list kername)
   : TemplateMonad (list (kername * constant_body)) :=
@@ -107,13 +190,31 @@ Definition build_env (decls : global_declarations) : global_env :=
      declarations := decls;
      retroknowledge := Retroknowledge.empty |}.
 
-Definition translate_all (tbl : clp_table) (Σ : global_env)
-  (inds : list inductive) : list clause :=
+Definition translate_all (tbl : clp_table) (arith : arith_table)
+  (Σ : global_env) (inds : list inductive) : list clause :=
   flat_map (fun ind =>
     match find_inductive Σ (inductive_mind ind) with
-    | Some mib => translate_inductive tbl Σ ind mib
+    | Some mib => translate_inductive tbl arith Σ ind mib
     | None => []
     end) inds.
+
+(** Recover the [list inductive] from a global_declarations list,
+    expanding each mutual_inductive_body into one [inductive] per
+    body index. Used after [close_kns] to extend the translation
+    target set with transitively-discovered inductives. *)
+Definition inds_of_decls (decls : global_declarations) : list inductive :=
+  flat_map (fun '(kn, decl) =>
+    match decl with
+    | InductiveDecl mib =>
+      let n := length (ind_bodies mib) in
+      let fix mkrange (i : nat) (acc : list inductive) : list inductive :=
+        match i with
+        | 0 => acc
+        | S i' => mkrange i' ({| inductive_mind := kn; inductive_ind := i' |} :: acc)
+        end
+      in mkrange n []
+    | _ => []
+    end) decls.
 
 (** Analyze constants into fixpoints and trusted predicates. *)
 Definition collect_fixpoints (consts : list (kername * constant_body))
@@ -141,14 +242,16 @@ Definition dedup_kns (kns : list kername) : list kername :=
   in go [] [] kns.
 
 (** Translate all Fixpoints into Prolog clauses. *)
-Definition translate_all_fixpoints (tbl : clp_table) (Σ : global_env)
-  (true_kn false_kn : kername) (fis : list fixpoint_info) : list clause :=
-  flat_map (translate_fixpoint tbl Σ true_kn false_kn) fis.
+Definition translate_all_fixpoints (tbl : clp_table) (arith : arith_table)
+  (Σ : global_env) (true_kn false_kn : kername) (fis : list fixpoint_info)
+  : list clause :=
+  flat_map (translate_fixpoint tbl arith Σ true_kn false_kn) fis.
 
 (** Translate every inductive and Fixpoint in a module to a Prolog program,
     including trusted predicate declarations for [Definition ... := True]. *)
 Definition hallmark_module (mod_name : qualid) : TemplateMonad string :=
   tmBind clpfd_defaults (fun tbl =>
+  tmBind arith_defaults (fun arith =>
   tmBind (tmQuote True) (fun true_tm =>
   tmBind (tmQuote False) (fun false_tm =>
   tmBind (tmQuoteModule mod_name) (fun refs =>
@@ -162,14 +265,17 @@ Definition hallmark_module (mod_name : qualid) : TemplateMonad string :=
       let fix_dep_kns := fixpoint_dep_inds fixpoints in
       let ind_kns := collect_kernames inds in
       let all_kns := dedup_kns (List.app ind_kns fix_dep_kns) in
-      tmBind (quote_all all_kns) (fun decls =>
+      tmBind (close_kns 1000 [] all_kns) (fun decls =>
         let Σ := build_env decls in
-        let ind_clauses := translate_all tbl Σ inds in
+        (* §2 fix: translate ALL inductives discovered transitively,
+           not just the target module's. *)
+        let all_inds := inds_of_decls decls in
+        let ind_clauses := translate_all tbl arith Σ all_inds in
         let fix_clauses :=
-          translate_all_fixpoints tbl Σ true_kn false_kn fixpoints in
+          translate_all_fixpoints tbl arith Σ true_kn false_kn fixpoints in
         let all_clauses := List.app ind_clauses fix_clauses in
         match all_clauses, trusted with
         | [], [] =>
           tmFail "No inductives, fixpoints, or trusted predicates found in module"%bs
         | _, _ => tmReturn (print_program trusted all_clauses)
-        end)))))).
+        end))))))).

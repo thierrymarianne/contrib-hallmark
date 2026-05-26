@@ -43,9 +43,17 @@ Fixpoint read_nat (fuel : nat) (t : term) : option nat :=
 (** Map a MetaRocq [term] to a [prolog_term].
     [depth] is the number of enclosing binders; [tRel n] is
     normalized to canonical binding position [depth - 1 - n].
-    Peano nat literals are converted to integer atoms. *)
-Definition term_to_prolog (Σ : global_env) (depth : nat) (t : term)
-  : prolog_term :=
+    Peano nat literals are converted to integer atoms.
+
+    [arith] is the arithmetic-operator table built by
+    [Clp.arith_defaults]: when a [tApp] node's head is one of
+    [Nat.add]/[Nat.sub]/[Nat.mul], it is emitted as [PInfix] so
+    Prolog renders it with native infix syntax. Other [tApp] nodes
+    become [PApp] (function-style). Closes §3 and §4 of the
+    upstream requirements: enum-constructor applications and
+    arithmetic-with-Fixpoint-operands now render correctly. *)
+Fixpoint term_to_prolog (arith : arith_table) (Σ : global_env)
+  (depth : nat) (t : term) : prolog_term :=
   match read_nat 1000 t with
   | Some n => PAtom (string_of_nat n)
   | None =>
@@ -58,20 +66,36 @@ Definition term_to_prolog (Σ : global_env) (depth : nat) (t : term)
       end
     | tConst kn _ => PAtom (snd kn)
     | tInd (mkInd kn _) _ => PAtom (snd kn)
+    | tApp f args =>
+      let pargs := map (term_to_prolog arith Σ depth) args in
+      match f with
+      | tConst kn _ =>
+        match arith_lookup arith kn, pargs with
+        | Some op, [l; r] => PInfix op l r
+        | _, _ => PApp (snd kn) pargs
+        end
+      | tInd (mkInd kn _) _ => PApp (snd kn) pargs
+      | tConstruct ind idx _ =>
+        match lookup_constructor_name Σ ind idx with
+        | Some name => PApp name pargs
+        | None => PAtom "?"%bs
+        end
+      | _ => PAtom "?"%bs
+      end
     | _ => PAtom "?"%bs
     end
   end.
 
-Definition args_to_prolog (Σ : global_env) (depth : nat) (args : list term)
-  : list prolog_term :=
-  map (term_to_prolog Σ depth) args.
+Definition args_to_prolog (arith : arith_table) (Σ : global_env)
+  (depth : nat) (args : list term) : list prolog_term :=
+  map (term_to_prolog arith Σ depth) args.
 
 (** Build the clause head from the conclusion.
     [total] is the total number of bindings in the telescope. *)
-Definition extract_conclusion (Σ : global_env) (ind_kn : kername)
-  (total : nat) (ret : term) : option prolog_term :=
+Definition extract_conclusion (arith : arith_table) (Σ : global_env)
+  (ind_kn : kername) (total : nat) (ret : term) : option prolog_term :=
   match is_ind_app ind_kn ret with
-  | Some args => Some (PApp (snd ind_kn) (args_to_prolog Σ total args))
+  | Some args => Some (PApp (snd ind_kn) (args_to_prolog arith Σ total args))
   | None => None
   end.
 
@@ -80,21 +104,22 @@ Definition extract_conclusion (Σ : global_env) (ind_kn : kername)
     [offset] shifts the starting depth (0 for constructor telescopes,
     [N+K] for Fixpoint branches where N=lambda args, K=pattern vars).
     [BConstraint] bindings become [PConstraint op lhs rhs]. *)
-Definition extract_body_at (Σ : global_env) (ind_kn : kername)
-  (offset : nat) (classes : list binding_class) : list prolog_term :=
+Definition extract_body_at (arith : arith_table) (Σ : global_env)
+  (ind_kn : kername) (offset : nat) (classes : list binding_class)
+  : list prolog_term :=
   let fix go (i : nat) (cs : list binding_class) : list prolog_term :=
     match cs with
     | [] => []
     | bc :: rest =>
       (match bc with
-       | BRecursive args => [PApp (snd ind_kn) (args_to_prolog Σ i args)]
-       | BExternal head args => [PApp (snd head) (args_to_prolog Σ i args)]
+       | BRecursive args => [PApp (snd ind_kn) (args_to_prolog arith Σ i args)]
+       | BExternal head args => [PApp (snd head) (args_to_prolog arith Σ i args)]
        | BConstraint op args =>
          match args with
          | [a1; a2] =>
-           [PConstraint op (term_to_prolog Σ i a1) (term_to_prolog Σ i a2)]
+           [PConstraint op (term_to_prolog arith Σ i a1) (term_to_prolog arith Σ i a2)]
          | [_; a1; a2] =>
-           [PConstraint op (term_to_prolog Σ i a1) (term_to_prolog Σ i a2)]
+           [PConstraint op (term_to_prolog arith Σ i a1) (term_to_prolog arith Σ i a2)]
          | _ => []
          end
        | BIndex | BErased => []
@@ -102,9 +127,9 @@ Definition extract_body_at (Σ : global_env) (ind_kn : kername)
     end
   in go offset classes.
 
-Definition extract_body (Σ : global_env) (ind_kn : kername)
-  (classes : list binding_class) : list prolog_term :=
-  extract_body_at Σ ind_kn 0 classes.
+Definition extract_body (arith : arith_table) (Σ : global_env)
+  (ind_kn : kername) (classes : list binding_class) : list prolog_term :=
+  extract_body_at arith Σ ind_kn 0 classes.
 
 (** Build the Rocq constructor argument template from classified bindings.
     [BIndex] at position [i] becomes [PVar i] (a data variable).
@@ -133,19 +158,20 @@ Definition build_witness_args (classes : list binding_class) : list prolog_term 
     For nullary constructors (empty telescope, no conclusion args),
     the constructor name is injected as an atom argument in the head:
     e.g. [admin : user] becomes [user(admin).] *)
-Definition translate_constructor (tbl : clp_table) (Σ : global_env)
-  (ind_kn : kername) (name : ident) (ty : term) : option clause :=
+Definition translate_constructor (tbl : clp_table) (arith : arith_table)
+  (Σ : global_env) (ind_kn : kername) (name : ident) (ty : term)
+  : option clause :=
   let '(bindings, ret) := parse_telescope ty in
   let total := length bindings in
   let classes := classify_all tbl ind_kn bindings in
-  match extract_conclusion Σ ind_kn total ret with
+  match extract_conclusion arith Σ ind_kn total ret with
   | Some head =>
     let head' :=
       match head with
       | PApp f [] => PApp f [PAtom name]
       | _ => head
       end in
-    let body := extract_body Σ ind_kn classes in
+    let body := extract_body arith Σ ind_kn classes in
     let wargs := build_witness_args classes in
     Some {| cl_name := name; cl_head := head'; cl_body := body;
             cl_witness_args := wargs; cl_npremises := None |}
@@ -160,14 +186,15 @@ Definition instantiate_cstr (mib : mutual_inductive_body) (ind : inductive)
   remove_arity (ind_npars mib) (subst0 subs (cstr_type cdecl)).
 
 (** Translate every constructor of an inductive into Prolog clauses. *)
-Definition translate_inductive (tbl : clp_table) (Σ : global_env)
-  (ind : inductive) (mib : mutual_inductive_body) : list clause :=
+Definition translate_inductive (tbl : clp_table) (arith : arith_table)
+  (Σ : global_env) (ind : inductive) (mib : mutual_inductive_body)
+  : list clause :=
   let ind_kn := inductive_mind ind in
   match nth_error (ind_bodies mib) (inductive_ind ind) with
   | Some oib =>
     flat_map (fun cdecl =>
       let ty := instantiate_cstr mib ind cdecl in
-      match translate_constructor tbl Σ ind_kn (cstr_name cdecl) ty with
+      match translate_constructor tbl arith Σ ind_kn (cstr_name cdecl) ty with
       | Some c => [c]
       | None => []
       end

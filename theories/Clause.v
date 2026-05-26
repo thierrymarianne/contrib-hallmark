@@ -10,11 +10,14 @@ From Stdlib Require Import List String.
 Import ListNotations.
 
 (** A Prolog term: variable, atom, compound [f(args...)],
-    or infix CLP constraint [lhs op rhs]. *)
+    infix operator [lhs op rhs] (rendered as such — used for
+    arithmetic [+], [-], [*] inside CLP constraints), or top-level
+    CLP constraint [clpfd_check(lhs op rhs)]. *)
 Inductive prolog_term :=
 | PVar        : nat -> prolog_term
 | PAtom       : ident -> prolog_term
 | PApp        : ident -> list prolog_term -> prolog_term
+| PInfix      : ident -> prolog_term -> prolog_term -> prolog_term
 | PConstraint : ident -> prolog_term -> prolog_term -> prolog_term.
 
 (** A Horn clause [head :- body]. Empty body means a fact.

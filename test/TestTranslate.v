@@ -19,5 +19,5 @@ Definition allowed_mib :=
   end.
 
 Example allowed_produces_three_clauses :
-  Nat.eqb (length (translate_inductive [] allowed_env allowed_ind allowed_mib)) 3 = true
+  Nat.eqb (length (translate_inductive [] [] allowed_env allowed_ind allowed_mib)) 3 = true
 := eq_refl.

@@ -19,6 +19,7 @@ Fixpoint collect_vars (t : prolog_term) : list nat :=
   | PVar n => [n]
   | PAtom _ => []
   | PApp _ args => flat_map collect_vars args
+  | PInfix _ l r => collect_vars l ++ collect_vars r
   | PConstraint _ l r => collect_vars l ++ collect_vars r
   end.
 
@@ -43,6 +44,10 @@ Fixpoint print_term_ctx (vars : list nat) (t : prolog_term) : string :=
       | [x] => print_term_ctx vars x
       | x :: rest => print_term_ctx vars x ++ ", " ++ go rest
       end) args ++ ")"
+  | PInfix op l r =>
+    (* Parenthesise for clarity inside larger expressions. *)
+    "(" ++ print_term_ctx vars l ++ " " ++ op ++ " "
+        ++ print_term_ctx vars r ++ ")"
   | PConstraint op l r =>
     "clpfd_check(" ++ print_term_ctx vars l ++ " " ++ op ++ " "
                    ++ print_term_ctx vars r ++ ")"
@@ -63,6 +68,7 @@ Fixpoint has_var (t : prolog_term) : bool :=
       | [] => false
       | x :: rest => has_var x || any rest
       end) args
+  | PInfix _ l r => has_var l || has_var r
   | PConstraint _ l r => has_var l || has_var r
   end.
 

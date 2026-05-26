@@ -69,3 +69,31 @@ Definition clpfd_defaults : TemplateMonad clp_table :=
       ; register_clpfd "#="  eq_tm
       ] in
     tmReturn entries))))).
+
+(** Same shape as [clp_table], but for binary arithmetic operators
+    used INSIDE CLP constraint expressions (the [+], [-], [*] on
+    either side of [<=], [=], etc.). The translator emits these as
+    [PInfix] rather than [PApp] so that Prolog renders them with
+    their native infix syntax (e.g. [X + Y #=< Z], not
+    [add(X, Y) #=< Z]).
+
+    Closes §4 of the hallmark upstream requirements (the arithmetic-
+    with-Fixpoint-operands rendering as [?]). *)
+Definition arith_table := list clp_mapping.
+
+Definition arith_lookup (tbl : arith_table) (kn : kername) : option ident :=
+  clp_lookup tbl kn.
+
+(** Build the standard arithmetic table at elaboration time.
+    Quotes [Nat.add], [Nat.sub], [Nat.mul] to discover their kernames. *)
+Definition arith_defaults : TemplateMonad arith_table :=
+  tmBind (tmQuote (Nat.add 0 0)) (fun add_tm =>
+  tmBind (tmQuote (Nat.sub 0 0)) (fun sub_tm =>
+  tmBind (tmQuote (Nat.mul 0 0)) (fun mul_tm =>
+    let entries := flat_map
+      (fun x => match x with Some e => [e] | None => [] end)
+      [ register_clpfd "+" add_tm
+      ; register_clpfd "-" sub_tm
+      ; register_clpfd "*" mul_tm
+      ] in
+    tmReturn entries))).

@@ -108,19 +108,19 @@ Definition is_ind_kn (kn : kername) (t : term) : bool :=
     - [True] / sort → [Some None] (no extra goal)
     - [False] → [None] (skip the whole branch)
     - predicate application → [Some (Some goal)] *)
-Definition translate_return (Σ : global_env) (fix_kn : kername)
-  (true_kn false_kn : kername) (depth : nat) (ret : term)
+Definition translate_return (arith : arith_table) (Σ : global_env)
+  (fix_kn : kername) (true_kn false_kn : kername) (depth : nat) (ret : term)
   : option (option prolog_term) :=
   if is_ind_kn true_kn ret then Some None
   else if is_ind_kn false_kn ret then None
   else if is_sort ret then Some None
   else
     match is_ind_app fix_kn ret with
-    | Some args => Some (Some (PApp (snd fix_kn) (args_to_prolog Σ depth args)))
+    | Some args => Some (Some (PApp (snd fix_kn) (args_to_prolog arith Σ depth args)))
     | None =>
       match get_app_head ret with
       | Some (kn, args) =>
-        Some (Some (PApp (snd kn) (args_to_prolog Σ depth args)))
+        Some (Some (PApp (snd kn) (args_to_prolog arith Σ depth args)))
       | None => Some None
       end
     end.
@@ -133,19 +133,19 @@ Definition translate_return (Σ : global_env) (fix_kn : kername)
     - positions N+K..: premise bindings from [parse_telescope]
 
     [extract_body_at] starts its depth counter at [offset = N + K]. *)
-Definition translate_branch (tbl : clp_table) (Σ : global_env)
-  (fix_kn : kername) (true_kn false_kn : kername) (fix_name : ident)
-  (nargs : nat) (matched : nat) (ctor_name : ident) (br : branch term)
-  : option clause :=
+Definition translate_branch (tbl : clp_table) (arith : arith_table)
+  (Σ : global_env) (fix_kn : kername) (true_kn false_kn : kername)
+  (fix_name : ident) (nargs : nat) (matched : nat) (ctor_name : ident)
+  (br : branch term) : option clause :=
   let bctx_len := length (bcontext br) in
   let offset := nargs + bctx_len in
   let '(bindings, ret) := parse_telescope (bbody br) in
   let total := offset + length bindings in
   let classes := classify_all tbl fix_kn bindings in
-  let body := extract_body_at Σ fix_kn offset classes in
+  let body := extract_body_at arith Σ fix_kn offset classes in
   let cl_name := fix_name ++ "_" ++ ctor_name in
   let head := build_fix_head fix_name nargs matched ctor_name bctx_len in
-  match translate_return Σ fix_kn true_kn false_kn total ret with
+  match translate_return arith Σ fix_kn true_kn false_kn total ret with
   | None => None
   | Some None =>
     Some {| cl_name := cl_name; cl_head := head; cl_body := body;
@@ -157,8 +157,9 @@ Definition translate_branch (tbl : clp_table) (Σ : global_env)
   end.
 
 (** Translate a complete Fixpoint into Prolog clauses. *)
-Definition translate_fixpoint (tbl : clp_table) (Σ : global_env)
-  (true_kn false_kn : kername) (fi : fixpoint_info) : list clause :=
+Definition translate_fixpoint (tbl : clp_table) (arith : arith_table)
+  (Σ : global_env) (true_kn false_kn : kername) (fi : fixpoint_info)
+  : list clause :=
   let nargs := length (fix_args fi) in
   let matched := fix_matched fi in
   let matched_ind := ci_ind (fix_ci fi) in
@@ -168,7 +169,7 @@ Definition translate_fixpoint (tbl : clp_table) (Σ : global_env)
     | br :: rest =>
       match lookup_constructor_name Σ matched_ind idx with
       | Some cname =>
-        match translate_branch tbl Σ (fix_kn fi) true_kn false_kn
+        match translate_branch tbl arith Σ (fix_kn fi) true_kn false_kn
                 (fix_name fi) nargs matched cname br with
         | Some c => c :: go (S idx) rest
         | None => go (S idx) rest
