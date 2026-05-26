@@ -84,7 +84,7 @@ let extract_flags_from_sexp sexp =
   | Some args -> collect_rq_flags args
   | None -> []
 
-let discover module_name =
+let discover_one module_name =
   let vo_path = module_to_vo module_name in
   let cmd = Printf.sprintf "dune rules %s 2>&1" (Filename.quote vo_path) in
   let ic = Unix.open_process_in cmd in
@@ -102,3 +102,40 @@ let discover module_name =
                      Make sure you are in a dune project and the module exists.\n"
       vo_path;
     exit 1
+
+(** Merge two load-path flag lists, dropping duplicate -R/-Q triples. *)
+let merge_flags base extra =
+  let rec to_triples = function
+    | flag :: dir :: name :: rest when flag = "-R" || flag = "-Q" ->
+      (flag, dir, name) :: to_triples rest
+    | _ :: rest -> to_triples rest
+    | [] -> []
+  in
+  let base_triples = to_triples base in
+  let extras =
+    List.filter
+      (fun t -> not (List.mem t base_triples))
+      (to_triples extra)
+  in
+  let extra_flags =
+    List.concat_map (fun (f, d, n) -> [f; d; n]) extras
+  in
+  base @ extra_flags
+
+(** Discover load paths for [module_name], always merged with
+    [Hallmark.Pipeline]'s load paths so the compile driver — which
+    always imports Hallmark.Pipeline — can find its dependency
+    regardless of whether the target theory declared Hallmark as a
+    dune dependency.
+
+    This is the fix for cross-project rocq.theory dependencies:
+    user-side .v files don't need to list Hallmark in (theories ...)
+    of their dune file — hallmark CLI always provides it. *)
+let discover module_name =
+  let target_flags = discover_one module_name in
+  if module_name = "Hallmark.Pipeline" then target_flags
+  else
+    let hallmark_flags =
+      try discover_one "Hallmark.Pipeline" with _ -> []
+    in
+    merge_flags target_flags hallmark_flags
