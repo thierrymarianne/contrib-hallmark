@@ -132,11 +132,22 @@ Definition is_constraint (t : prolog_term) : bool :=
 Definition has_clpfd (clauses : list clause) : bool :=
   existsb (fun c => existsb is_constraint (cl_body c)) clauses.
 
-(** Render a trusted-predicate declaration as a [:- dynamic] directive
-    plus a [trusted_pred/1] marker for the witness system. *)
+(** Render a trusted-predicate declaration as a [trusted_pred/1]
+    marker.
+
+    Previous versions also emitted a [:- dynamic name/arity.]
+    directive, but this conflicts with the consumer pattern where
+    the trusted predicate is implemented in a sibling Prolog module
+    (e.g. [snapshot_facts:pi_state_is/3]) and imported via
+    [:- use_module]. The [:- dynamic] declaration creates an empty
+    user-module predicate that shadows the imported clauses; queries
+    then fail because Prolog uses the empty version.
+
+    [why.pl]'s [witness/2] only consults [trusted_pred/1]; the
+    [:- dynamic] directive isn't load-bearing. Callers who want the
+    runtime mutability can add it themselves at scenario level. *)
 Definition print_trusted_decl (decl : ident * nat) : string :=
-  let '(name, arity) := decl in
-  ":- dynamic " ++ name ++ "/" ++ string_of_nat arity ++ "." ++ nl ++
+  let '(name, _arity) := decl in
   "trusted_pred(" ++ name ++ ").".
 
 (** Render a [fix_witness/4] fact for Fixpoint proof-witness reconstruction.

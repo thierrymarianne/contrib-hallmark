@@ -145,6 +145,11 @@ Definition is_skip_kn (kn : kername) : bool :=
     inductives across multiple .v files, and hallmark will quote the
     transitive closure starting from the inductives declared in the
     target module. *)
+(** Close the kername set transitively. Quotes EVERY referenced
+    inductive (including stdlib ones like [bool]) into the global env
+    so [lookup_constructor_name] can resolve their constructor atoms
+    (e.g. [true], [false]). Whether to emit clauses for them is a
+    separate decision — see [should_emit_clauses_for] below. *)
 Fixpoint close_kns (fuel : nat) (seen : list kername) (todo : list kername)
   : TemplateMonad global_declarations :=
   match fuel with
@@ -155,8 +160,6 @@ Fixpoint close_kns (fuel : nat) (seen : list kername) (todo : list kername)
     | kn :: rest =>
       if existsb (fun s => kn == s) seen
       then close_kns fuel' seen rest
-      else if is_skip_kn kn
-      then close_kns fuel' (kn :: seen) rest
       else
         tmBind (tmQuoteInductive kn) (fun mib =>
           let new_refs := mib_kn_refs mib in
@@ -168,6 +171,13 @@ Fixpoint close_kns (fuel : nat) (seen : list kername) (todo : list kername)
             tmReturn ((kn, InductiveDecl mib) :: rest_decls)))
     end
   end.
+
+(** Emit clauses for this kername? Stdlib/Corelib inductives are kept
+    in Σ for constructor lookups but their clauses aren't emitted —
+    they often include uppercase-headed constructors ([S], [le_S])
+    that Prolog mis-parses as variables. *)
+Definition should_emit_clauses_for (kn : kername) : bool :=
+  negb (is_skip_kn kn).
 
 (** Monadic loop: quote each constant kername. *)
 Fixpoint quote_constants (kns : list kername)
@@ -234,19 +244,22 @@ Definition translate_all (tbl : clp_table) (arith : arith_table)
 
 (** Recover the [list inductive] from a global_declarations list,
     expanding each mutual_inductive_body into one [inductive] per
-    body index. Used after [close_kns] to extend the translation
-    target set with transitively-discovered inductives. *)
+    body index. Only inductives that pass [should_emit_clauses_for]
+    are returned — stdlib types stay in Σ for constructor lookups
+    but their clauses are skipped. *)
 Definition inds_of_decls (decls : global_declarations) : list inductive :=
   flat_map (fun '(kn, decl) =>
     match decl with
     | InductiveDecl mib =>
-      let n := length (ind_bodies mib) in
-      let fix mkrange (i : nat) (acc : list inductive) : list inductive :=
-        match i with
-        | 0 => acc
-        | S i' => mkrange i' ({| inductive_mind := kn; inductive_ind := i' |} :: acc)
-        end
-      in mkrange n []
+      if should_emit_clauses_for kn then
+        let n := length (ind_bodies mib) in
+        let fix mkrange (i : nat) (acc : list inductive) : list inductive :=
+          match i with
+          | 0 => acc
+          | S i' => mkrange i' ({| inductive_mind := kn; inductive_ind := i' |} :: acc)
+          end
+        in mkrange n []
+      else []
     | _ => []
     end) decls.
 

@@ -13,6 +13,15 @@ clpfd_check(C) :- call(C).
 
 why(clpfd_check(C), proof(clpfd_check(C), by(constraint, []))) :-
     call(C), !.
+%% Trusted predicates: emit a fact-leaf if the goal succeeds, regardless
+%% of how the clause body is structured. Trusted preds may be implemented
+%% as bare assertz'd facts (older idiom) or as imported single-clause
+%% lookups against a snapshot term (purer functional idiom — no assertz).
+%% In both cases the witness shape is the same.
+why(Goal, proof(Goal, by(fact, []))) :-
+    Goal =.. [Pred | _],
+    trusted_pred(Pred), !,
+    call(Goal).
 why(Goal, proof(Goal, by(Rule, []))) :-
     clause(Goal, true), !,
     (ctor_witness(Rule, Goal, [], _) -> true ; Rule = fact).
