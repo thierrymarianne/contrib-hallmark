@@ -81,13 +81,32 @@ let generate_driver ~module_name =
          tmMsg (\"%%%%HALLMARK_BEGIN%%%%\" ++ nl ++ result ++ \"%%%%HALLMARK_END%%%%\"))).\n"
     module_name module_name
 
+(** Multi-module driver: aggregates inductives + constants from every
+    listed module via Pipeline.hallmark_modules. *)
+let generate_driver_many ~module_names =
+  let requires =
+    String.concat "\n" (List.map (Printf.sprintf "Require Import %s.") module_names)
+  in
+  let mod_list_bs =
+    "[" ^ String.concat "; " (List.map (Printf.sprintf "\"%s\"%%bs") module_names) ^ "]"
+  in
+  Printf.sprintf
+    "From Hallmark Require Import Pipeline.\n\
+     From MetaRocq.Template Require Import All.\n\
+     From MetaRocq.Utils Require Import bytestring MRString.\n\
+     %s\n\
+     Local Open Scope bs_scope.\n\
+     MetaRocq Run (\n\
+       tmBind (hallmark_modules %s) (fun result =>\n\
+         tmMsg (\"%%%%HALLMARK_BEGIN%%%%\" ++ nl ++ result ++ \"%%%%HALLMARK_END%%%%\"))).\n"
+    requires mod_list_bs
+
 let ensure_nl s =
   if String.length s = 0 then "\n"
   else if String.ends_with ~suffix:"\n" s then s
   else s ^ "\n"
 
-let compile ~rocq_flags ~module_name =
-  let driver = generate_driver ~module_name in
+let run_driver ~rocq_flags ~driver =
   let driver_path = Filename.temp_file "hallmark_" ".v" in
   let oc = open_out driver_path in
   output_string oc driver;
@@ -109,3 +128,9 @@ let compile ~rocq_flags ~module_name =
   | _ ->
     Printf.eprintf "coqc terminated abnormally\n";
     exit 1
+
+let compile ~rocq_flags ~module_name =
+  run_driver ~rocq_flags ~driver:(generate_driver ~module_name)
+
+let compile_many ~rocq_flags ~module_names =
+  run_driver ~rocq_flags ~driver:(generate_driver_many ~module_names)

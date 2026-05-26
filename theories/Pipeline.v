@@ -98,6 +98,38 @@ Definition mib_kn_refs (mib : mutual_inductive_body) : list kername :=
              (ind_ctors oib))
     (ind_bodies mib).
 
+(** Check whether a kername belongs to a "skip" module path — these
+    inductives are not quoted into the engine even when referenced.
+
+    Pulling in [Corelib.Init.Datatypes.nat], [Corelib.Init.Peano.le],
+    etc., produces extra clauses whose constructor names ([S], [O],
+    [le_S]) start uppercase, which Prolog parses as variables and
+    rejects in head position. These inductives are not used at query
+    time — concrete numbers come from snapshot facts, not Peano nat
+    structure — so dropping them is safe and the engine becomes
+    consult-clean.
+
+    Match on the LAST element of the module path (MetaRocq stores
+    paths innermost-first, so the root namespace [Corelib] / [Stdlib]
+    is the last element). *)
+Fixpoint last_path_elt (path : list ident) : option ident :=
+  match path with
+  | [] => None
+  | [x] => Some x
+  | _ :: rest => last_path_elt rest
+  end.
+
+Definition is_skip_kn (kn : kername) : bool :=
+  match fst kn with
+  | MPfile path =>
+    match last_path_elt path with
+    | Some root =>
+      String.eqb root "Stdlib"%bs || String.eqb root "Corelib"%bs
+    | None => false
+    end
+  | _ => false
+  end.
+
 (** Transitive closure: starting from a seed list of inductive
     kernames, repeatedly quote and scan each one's constructor types
     for additional inductive references, quoting those too, until no
@@ -123,6 +155,8 @@ Fixpoint close_kns (fuel : nat) (seen : list kername) (todo : list kername)
     | kn :: rest =>
       if existsb (fun s => kn == s) seen
       then close_kns fuel' seen rest
+      else if is_skip_kn kn
+      then close_kns fuel' (kn :: seen) rest
       else
         tmBind (tmQuoteInductive kn) (fun mib =>
           let new_refs := mib_kn_refs mib in
@@ -249,12 +283,31 @@ Definition translate_all_fixpoints (tbl : clp_table) (arith : arith_table)
 
 (** Translate every inductive and Fixpoint in a module to a Prolog program,
     including trusted predicate declarations for [Definition ... := True]. *)
-Definition hallmark_module (mod_name : qualid) : TemplateMonad string :=
+(** Aggregate refs from a list of modules via tmQuoteModule. *)
+Fixpoint quote_module_refs (mod_names : list qualid)
+  : TemplateMonad (list global_reference) :=
+  match mod_names with
+  | [] => tmReturn []
+  | m :: rest =>
+    tmBind (tmQuoteModule m) (fun refs =>
+      tmBind (quote_module_refs rest) (fun acc =>
+        tmReturn (List.app refs acc)))
+  end.
+
+(** Multi-module entry point. Closes §2 of the upstream requirements
+    at the Fixpoint / constant level too: the user passes every
+    module whose constants (Fixpoints, trusted predicates) should
+    appear in the engine, not just the one whose inductives are the
+    top-level query target.
+
+    Inductives are still discovered transitively via close_kns; only
+    constants need to be enumerated by module. *)
+Definition hallmark_modules (mod_names : list qualid) : TemplateMonad string :=
   tmBind clpfd_defaults (fun tbl =>
   tmBind arith_defaults (fun arith =>
   tmBind (tmQuote True) (fun true_tm =>
   tmBind (tmQuote False) (fun false_tm =>
-  tmBind (tmQuoteModule mod_name) (fun refs =>
+  tmBind (quote_module_refs mod_names) (fun refs =>
     let true_kn := extract_ind_kn true_tm in
     let false_kn := extract_ind_kn false_tm in
     let inds := filter_ind_refs refs in
@@ -267,8 +320,6 @@ Definition hallmark_module (mod_name : qualid) : TemplateMonad string :=
       let all_kns := dedup_kns (List.app ind_kns fix_dep_kns) in
       tmBind (close_kns 1000 [] all_kns) (fun decls =>
         let Σ := build_env decls in
-        (* §2 fix: translate ALL inductives discovered transitively,
-           not just the target module's. *)
         let all_inds := inds_of_decls decls in
         let ind_clauses := translate_all tbl arith Σ all_inds in
         let fix_clauses :=
@@ -276,6 +327,10 @@ Definition hallmark_module (mod_name : qualid) : TemplateMonad string :=
         let all_clauses := List.app ind_clauses fix_clauses in
         match all_clauses, trusted with
         | [], [] =>
-          tmFail "No inductives, fixpoints, or trusted predicates found in module"%bs
+          tmFail "No inductives, fixpoints, or trusted predicates found in modules"%bs
         | _, _ => tmReturn (print_program trusted all_clauses)
         end))))))).
+
+(** Backward-compatible single-module wrapper. *)
+Definition hallmark_module (mod_name : qualid) : TemplateMonad string :=
+  hallmark_modules [mod_name].

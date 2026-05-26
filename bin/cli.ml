@@ -2,17 +2,23 @@ open Cmdliner
 
 (* -- compile subcommand -------------------------------------------------- *)
 
-let compile_module_name =
-  let doc = "Rocq module to translate (e.g. MyLib.Module)." in
-  Arg.(required & pos 0 (some string) None & info [] ~docv:"MODULE" ~doc)
+let compile_module_names =
+  let doc = "Rocq modules to translate (e.g. MyLib.A MyLib.B). \
+             Inductives are auto-discovered transitively across \
+             imports, but Fixpoint/trusted-predicate constants from \
+             dependent modules must be listed explicitly." in
+  Arg.(non_empty & pos_all string [] & info [] ~docv:"MODULE" ~doc)
 
 let output =
   let doc = "Output file. Defaults to stdout." in
   Arg.(value & opt (some string) None & info [ "o"; "output" ] ~docv:"FILE" ~doc)
 
-let compile_run module_name output =
-  let rocq_flags = Loadpath.discover module_name in
-  let prolog = Rocq.compile ~rocq_flags ~module_name in
+let compile_run module_names output =
+  (* Discover load paths for the first module (others share its env;
+     the §5 fix in Loadpath.discover always merges in Hallmark.Pipeline). *)
+  let primary = List.hd module_names in
+  let rocq_flags = Loadpath.discover primary in
+  let prolog = Rocq.compile_many ~rocq_flags ~module_names in
   match output with
   | None -> print_string prolog
   | Some path ->
@@ -22,10 +28,10 @@ let compile_run module_name output =
     Printf.eprintf "Wrote %s\n" path
 
 let compile_cmd =
-  let doc = "Compile a Rocq module to a Prolog program." in
+  let doc = "Compile one or more Rocq modules to a single Prolog program." in
   let info = Cmd.info "compile" ~doc in
   Cmd.v info
-    Term.(const compile_run $ compile_module_name $ output)
+    Term.(const compile_run $ compile_module_names $ output)
 
 (* -- why subcommand ------------------------------------------------------ *)
 
