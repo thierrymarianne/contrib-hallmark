@@ -1,14 +1,19 @@
 # Pre-built hallmark opam toolchain.
 #
-# Built by .github/workflows/hallmark-deps-image.yml and consumed by the
-# hallmark-check and hallmark-functional jobs in .github/workflows/sdk.yml
-# via the `container:` directive. Single source of truth for the dep
-# chain is lib/hallmark/scripts/opam_setup.sh, which is COPYed in below
-# and executed at image-build time.
+# Built and pushed locally from the SDK repo via `make hallmark-deps-image`
+# (see the `hallmark-deps-image*` targets in sdk/Makefile). The published
+# image is consumed by the hallmark-check and hallmark-functional jobs in
+# sdk/.github/workflows/sdk.yml via the `container:` directive.
 #
-# Image tag is content-addressed on hashFiles(opam_setup.sh) — any edit
-# to that script naturally invalidates the image tag and triggers a
-# rebuild via the workflow's paths filter.
+# Single source of truth for the dep chain is lib/hallmark/scripts/opam_setup.sh,
+# which is COPYed in below and executed at image-build time.
+#
+# Image tag is content-addressed on sha256(opam_setup.sh)[:12]. The same
+# formula is duplicated by the `compute-hallmark-deps-tag` job in sdk.yml,
+# which feeds the tag into the `container.image` field of the consumer jobs —
+# keep them in lockstep. Editing opam_setup.sh invalidates the tag; you must
+# re-run `make hallmark-deps-image` to publish a fresh image under the new
+# tag (there is no automated CI rebuild).
 
 FROM ubuntu:24.04
 
