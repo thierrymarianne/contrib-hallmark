@@ -56,6 +56,14 @@ RUN opam init --bare --disable-sandboxing -y \
  && opam install -y coq-ext-lib \
  && opam clean -a -c -s --logs
 
+# Pin OPAMROOT to the absolute path where `opam init` actually wrote
+# state (root's home during the build). GitHub Actions container jobs
+# override $HOME to /github/home regardless of the image's USER, so the
+# default $HOME/.opam lookup misses /root/.opam and opam prints
+# "Opam has not been initialised". Setting OPAMROOT explicitly makes
+# the image robust to that override.
+ENV OPAMROOT=/root/.opam
+
 # Consumers should `eval $(opam env --switch=hallmark --set-switch)`
 # as the first command in any shell step. We do not set an ENTRYPOINT
 # because GitHub Actions overrides it for `container:` jobs.
