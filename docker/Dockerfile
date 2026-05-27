@@ -21,9 +21,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   m4              — required by camlp-streams (transitive)
 #   unzip, rsync    — used by some opam package fetchers
 #   ca-certificates — TLS roots for HTTPS opam repos
+#   libgmp-dev      — depext of zarith (pulled in by rocq-runtime); pre-installed
+#                     so opam doesn't have to apt-get it at solve time, which would
+#                     fail after the apt lists cleanup below
+#   pkg-config      — depext of zarith (conf-pkg-config); same reason
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       opam git make build-essential m4 unzip rsync ca-certificates \
+      libgmp-dev pkg-config \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/hallmark
