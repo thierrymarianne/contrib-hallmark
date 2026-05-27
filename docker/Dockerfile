@@ -64,6 +64,17 @@ RUN opam init --bare --disable-sandboxing -y \
 # the image robust to that override.
 ENV OPAMROOT=/root/.opam
 
+# Default LANG/LC_ALL so SWI-Prolog inside the container can decode
+# UTF-8 source files. Without this, the base image has no locale and
+# SWI emits a flood of "Illegal multibyte Sequence" warnings (cosmetic
+# but noisy) when consulting any .pl file with non-ASCII content.
+# C.UTF-8 is a built-in glibc locale on Ubuntu 24.04 — no `locales`
+# apt package or `locale-gen` needed. Positioned after the opam layer
+# so changing it doesn't invalidate the ~30-min Rocq/MetaRocq compile
+# cache.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
 # Consumers should `eval $(opam env --switch=hallmark --set-switch)`
 # as the first command in any shell step. We do not set an ENTRYPOINT
 # because GitHub Actions overrides it for `container:` jobs.
